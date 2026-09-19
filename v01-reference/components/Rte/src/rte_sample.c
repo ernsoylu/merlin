@@ -24,7 +24,7 @@ void Rte_SamplePublish(Rte_SampleType *slot, int32_t value,
     SAMPLE_UNLOCK();
 }
 
-void Rte_SampleRepublish(Rte_SampleType *slot)
+void Rte_SampleRepublish(const Rte_SampleType *slot)
 {
     /* Cached data keeps its acquisition time and sequence. */
     (void)slot;

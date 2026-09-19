@@ -2,7 +2,7 @@
 
 static int32_t compensate_temperature(const Bme280_CalibrationType *c, int32_t adc, int32_t *fine)
 {
-    int32_t var1 = ((((adc >> 3) - ((int32_t)c->dig_T1 << 1))) * c->dig_T2) >> 11;
+    int32_t var1 = (((adc >> 3) - ((int32_t)c->dig_T1 << 1)) * c->dig_T2) >> 11;
     int32_t delta = (adc >> 4) - (int32_t)c->dig_T1;
     int32_t var2 = (((delta * delta) >> 12) * c->dig_T3) >> 14;
     *fine = var1 + var2;

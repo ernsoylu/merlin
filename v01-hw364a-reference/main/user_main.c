@@ -44,7 +44,9 @@ static Mcal_ResultType transfer(Mcal_I2cHandleType *handle, uint8_t address,
     i2c_master_start(command);
     i2c_master_write_byte(command, (address << 1) | I2C_MASTER_WRITE, true);
     i2c_master_write_byte(command, control, true);
-    i2c_master_write(command, (uint8_t *)data, length, true);
+    for (uint16_t i = 0U; i < length; ++i) {
+        i2c_master_write_byte(command, data[i], true);
+    }
     i2c_master_stop(command);
     const esp_err_t error = i2c_master_cmd_begin(
         (i2c_port_t)handle->port, command,

@@ -13,6 +13,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TOOLCHAIN_ENV = REPO_ROOT / "toolchain.env"
+IDF_TOOL = "idf.py"
+ESPRESSIF_DIR = ".espressif"
+VERSION_RE = re.compile(r"\d+\.\d+\.\d+")
 
 
 def load_toolchain(path=None):
@@ -35,8 +38,8 @@ def parse_version(text):
     'qemu-system-xtensa version 8.2.0 (v8.2.0-...)'. Take the first triple and
     ignore whatever the build appended.
     """
-    match = re.search(r"(\d+)\.(\d+)\.(\d+)", text or "")
-    return ".".join(match.groups()) if match else None
+    match = VERSION_RE.search(text or "")
+    return match.group(0) if match else None
 
 
 def _run(cmd):
@@ -48,21 +51,21 @@ def _run(cmd):
     return (done.stdout or "") + (done.stderr or "")
 
 
-def find_idf(pins):
+def find_idf():
     """idf.py from PATH, else from IDF_PATH, else the conventional clone."""
-    on_path = shutil.which("idf.py")
+    on_path = shutil.which(IDF_TOOL)
     if on_path:
         return Path(on_path)
     roots = [os.environ.get("IDF_PATH"), Path.home() / "esp" / "esp-idf"]
     for root in roots:
-        if root and (Path(root) / "tools" / "idf.py").is_file():
-            return Path(root) / "tools" / "idf.py"
+        if root and (Path(root) / "tools" / IDF_TOOL).is_file():
+            return Path(root) / "tools" / IDF_TOOL
     return None
 
 
 def find_qemu(pins):
     """Prefer Espressif QEMU; a distro binary may lack the esp32 machine."""
-    tools = Path.home() / ".espressif" / "tools" / pins.get("QEMU_TOOL", "qemu-xtensa")
+    tools = Path.home() / ESPRESSIF_DIR / "tools" / pins.get("QEMU_TOOL", "qemu-xtensa")
     found = sorted(tools.glob("**/qemu-system-xtensa"))
     if found:
         return found[-1]
@@ -73,7 +76,7 @@ def find_qemu(pins):
 def find_gcc(pins):
     """Find the Espressif compiler even when export.sh has not been sourced."""
     name = f"{pins['GCC_PREFIX']}-gcc"
-    tools = Path.home() / ".espressif" / "tools" / "xtensa-esp-elf"
+    tools = Path.home() / ESPRESSIF_DIR / "tools" / "xtensa-esp-elf"
     found = sorted(tools.glob(f"**/bin/{name}"))
     if found:
         return found[-1]
@@ -89,7 +92,7 @@ def find_idf_python():
         candidates.append(Path(configured) / "bin" / "python")
     candidates.extend(
         sorted(
-            (Path.home() / ".espressif" / "python_env").glob("idf*_py*/bin/python"),
+            (Path.home() / ESPRESSIF_DIR / "python_env").glob("idf*_py*/bin/python"),
             reverse=True,
         )
     )
@@ -143,9 +146,9 @@ def check_env(stream=sys.stdout):
     rows.append(("python", *check_python(pins)))
     rows.append(("packages", *check_packages()))
 
-    idf = find_idf(pins)
+    idf = find_idf()
     if idf is None:
-        rows.append(("esp-idf", False, "idf.py not found (PATH, IDF_PATH, ~/esp/esp-idf)"))
+        rows.append(("esp-idf", False, f"{IDF_TOOL} not found (PATH, IDF_PATH, ~/esp/esp-idf)"))
     else:
         idf_python = find_idf_python() or Path(sys.executable)
         found = parse_version(_run([str(idf_python), str(idf), "--version"]))

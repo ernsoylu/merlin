@@ -68,7 +68,9 @@ Mcal_ResultType Mcal_Pwm_SetDuty(const Mcal_PwmHandleType *handle,
 Mcal_ResultType Mcal_Pwm_Init(Mcal_PwmHandleType *handle,
                               const Mcal_PwmConfigType *config)
 {
-    (void)handle;
+    if (handle != 0) {
+        handle->initialized = 0U;
+    }
     (void)config;
     return MCAL_HW_FAIL;
 }

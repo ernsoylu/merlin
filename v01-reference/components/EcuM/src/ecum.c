@@ -3,6 +3,18 @@
 #include "EcuM.h"
 #include "Os_Wrapper.h"
 
+#ifdef ESP_PLATFORM
+#include "bme280.h"
+#include "ClimateController.h"
+#include "IoHwAb_Fan.h"
+#include "Mcal_Port.h"
+#include "Mcal_Pwm.h"
+#include "Rte_Type.h"
+#include "esp_attr.h"
+#include "esp_system.h"
+#include "esp_timer.h"
+#endif
+
 void EcuM_ContextInit(EcuM_ContextType *context, uint32_t bootLoopCount)
 {
     *context = (EcuM_ContextType){
@@ -76,17 +88,6 @@ void EcuM_EnterSafeHalt(EcuM_ContextType *context)
 }
 
 #ifdef ESP_PLATFORM
-
-#include "bme280.h"
-#include "ClimateController.h"
-#include "IoHwAb_Fan.h"
-#include "Mcal_Port.h"
-#include "Mcal_Pwm.h"
-#include "Rte_Type.h"
-#include "esp_attr.h"
-#include "esp_system.h"
-#include "esp_timer.h"
-
 typedef struct {
     uint8_t chipId;
     uint8_t calibrationTp[24];
@@ -167,7 +168,7 @@ static Mcal_ResultType fake_write(void *context, uint8_t address, uint8_t reg,
 static Mcal_ResultType fake_read(void *context, uint8_t address, uint8_t reg,
                                  uint8_t *data, uint16_t length)
 {
-    EcuM_FakeI2cType *fake = context;
+    const EcuM_FakeI2cType *fake = context;
     (void)address;
     if (reg == 0xD0U && length == 1U) {
         data[0] = fake->chipId;
@@ -198,8 +199,13 @@ static void report_fault(void *argument, uint32_t fault, int64_t value)
 
 static const char *sensor_health(Bme280_HealthType health)
 {
-    return health == BME280_HEALTH_READY ? "READY" :
-           health == BME280_HEALTH_DEGRADED ? "DEGRADED" : "INITIAL";
+    if (health == BME280_HEALTH_READY) {
+        return "READY";
+    }
+    if (health == BME280_HEALTH_DEGRADED) {
+        return "DEGRADED";
+    }
+    return "INITIAL";
 }
 
 static void report_sensor(const Bme280_InstanceType *sensor, const char *name)
@@ -286,7 +292,7 @@ void EcuM_Startup(void)
     if (bootLoopCounter >= 5U) {
         EcuM_EnterSafeHalt(&runtime.context);
         printf("{\"system\":\"SAFE_HALT\",\"reason\":\"BOOT_LOOP\",\"resetReason\":%d}\n",
-               (int)esp_reset_reason());
+               esp_reset_reason());
         return;
     }
     bootLoopCounter++;
