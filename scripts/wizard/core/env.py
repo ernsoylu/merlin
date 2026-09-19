@@ -5,7 +5,6 @@ the only thing that reads it, so install.sh and check-env cannot drift apart.
 """
 
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -15,7 +14,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 TOOLCHAIN_ENV = REPO_ROOT / "toolchain.env"
 IDF_TOOL = "idf.py"
 ESPRESSIF_DIR = ".espressif"
-VERSION_RE = re.compile(r"\d+\.\d+\.\d+")
 
 
 def load_toolchain(path=None):
@@ -38,8 +36,26 @@ def parse_version(text):
     'qemu-system-xtensa version 8.2.0 (v8.2.0-...)'. Take the first triple and
     ignore whatever the build appended.
     """
-    match = VERSION_RE.search(text or "")
-    return match.group(0) if match else None
+    text = text or ""
+    for start, character in enumerate(text):
+        if not character.isdigit():
+            continue
+        parts = []
+        position = start
+        while len(parts) < 3:
+            begin = position
+            while position < len(text) and text[position].isdigit():
+                position += 1
+            if begin == position:
+                break
+            parts.append(text[begin:position])
+            if len(parts) < 3:
+                if position >= len(text) or text[position] != ".":
+                    break
+                position += 1
+        if len(parts) == 3:
+            return ".".join(parts)
+    return None
 
 
 def _run(cmd):
