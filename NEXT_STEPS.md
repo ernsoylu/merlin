@@ -12,8 +12,8 @@ deliverables exist — it is done when its **gate** holds.
 | Phase | Name | Gate | Status |
 |-------|------|------|--------|
 | 0 | Repository skeleton & toolchain | `check-env` green on a clean machine | **complete** |
-| 0E | ESP8266 backend qualification | generic ECU SDK/compiler pinned; build and runtime feasibility recorded | **not started** |
-| 1 | v0.1 reference firmware | complete HW-394 and HW-364A paths; host/layering tests; ESP32 QEMU and ESP8266 hardware boot | **ESP32 + host slice complete; ESP8266/HW-364A pending Phase 0E** |
+| 0E | ESP8266 backend qualification | generic ECU SDK/compiler pinned; build and runtime feasibility recorded | **baseline qualified; acceptance measurements pending** |
+| 1 | v0.1 reference firmware | complete HW-394 and HW-364A paths; host/layering tests; ESP32 QEMU and ESP8266 hardware boot | **complete; Phase 2 hardware acceptance pending** |
 | 2 | Hardware validation & measurement | §8.3 and OLED acceptance pass per ECU, numbers recorded | **boot smoke only; acceptance pending** |
 | 3 | Schema freeze | measured numbers and modular ECU/board/driver model; §4 schema 2.2.0 frozen | **not started** |
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **not started** |
@@ -28,19 +28,23 @@ ESP-IDF 5.2.3, passes the host suite and explicit BME280/OLED layering checks,
 passes parsed QEMU structured-output startup, and has booted on HW-394 with
 verified 4 MB flash writes. The HW-394 image currently uses deterministic fake
 sensors by default, so external BME280 wiring and measured control behavior
-remain open. The provider-agnostic display SWC, SSD1306 transport and fault
-tests are host-ready; ESP8266 backend qualification and HW-364A physical proof
-remain Phase 0E work. See [measurements](docs/measurements.md).
+remain open. The native ESP8266 RTOS SDK v3.4 HW-364A reference now builds,
+hash-verifies its flash writes, boots the identified ESP8266EX/2 MB unit, and
+repeatedly transfers frames to the OLED at GPIO14/GPIO12, address 0x3C. Host,
+layering, and both reference-path checks are complete; timing, fault-injection,
+visible-pattern, and watchdog acceptance remain Phase 2 work. See
+[measurements](docs/measurements.md).
 
 **Owner expansion:** generic ESP8266 is a second ECU target; HW-364A is its board
 profile; SSD1306 is a reusable driver selected automatically by that board with
 its bus/pin/address reservations. Generic ESP8266 selects devices explicitly.
-[ECU support](docs/ecu-support.md) defines compatibility and acceptance. This
-update changes documentation only; Luna Code implements the work below.
+[ECU support](docs/ecu-support.md) defines compatibility and acceptance. The
+hand-built reference now covers both documented paths; schema/generator work
+remains later phases.
 
 Phase 0's existing completion marker applies only to the original ESP32 setup.
-The current shell check is sufficient for the ESP32 build/QEMU/flash workflow;
-it provides no ESP8266 evidence.
+Phase 0E records the isolated ESP8266 RTOS SDK v3.4/GCC 8.4.0 environment and
+native HW-364A runtime baseline; it does not claim full qualification.
 Phases 3–6 still wait for qualified runtimes and measurements from both targets.
 
 ---
@@ -83,7 +87,7 @@ that has never seen the project, and a second `./install.sh` changes nothing.
 
 ---
 
-## Phase 0E — ESP8266 backend qualification (new)
+## Phase 0E — ESP8266 backend qualification (baseline complete)
 
 Use generic ESP8266 as the backend unit and HW-364A as its first physical test
 board. Start with the candidate ESP8266 RTOS SDK v3.4 and GCC 8.4.0 toolchain;
@@ -97,9 +101,11 @@ Confirm board/module identity, actual flash capacity, numeric OLED wiring,
 pull-ups and reset arrangement. An upstream Arduino display smoke may establish
 a hardware baseline, but cannot substitute for Merlin driver/runtime acceptance.
 
-**Gate:** reproducible pinned environment, basic ESP8266 boot evidence, and an
-implementable mapping for every required runtime service. Full behavioral proof
-belongs to Phases 1–2. Keep unsupported services non-selectable.
+**Gate:** baseline passed. The environment is pinned to ESP8266 RTOS SDK v3.4
+commit `89a3f254b63819035f65d9c5dcdae8864f1a6a8a` and GCC 8.4.0; the native
+HW-364A target builds, flashes with verified hashes, boots, initializes the
+documented OLED, and transfers repeated frames. Full behavioral proof belongs
+to Phase 2. Unsupported services remain non-selectable.
 
 ---
 
@@ -174,8 +180,9 @@ Bottom-up, because each step adds exactly one thing that can be wrong.
 
 ### ESP8266 and OLED implementation track
 
-1. After Phase 0E, implement target-specific MCAL/Os/EcuM services with portable
-   public contracts and a generic explicit-wiring configuration.
+1. Implement target-specific MCAL/Os/EcuM services with portable public
+   contracts and a generic explicit-wiring configuration. The HW-364A baseline
+   is now present in `v01-hw364a-reference/`.
 2. Implement SSD1306 packing/bounds as pure host-testable logic and command/data
    transfer through MCAL I2c. Keep frame ownership static and coherent across
    bounded chunks; measure transfer time before setting deadlines/timeouts.
@@ -237,11 +244,12 @@ its own physical boot/runtime evidence; no OLED emulator is assumed.
 
 ### Gate
 
-Both complete reference paths build warning-free under `-Wall -Wextra`; host
-tests pass under ASan/UBSan; negative compile cases fail for the intended
-boundary; ESP32 QEMU and physical ESP8266 runs demonstrate the actual startup
-gate and structured instance/health output. A pair of constant JSON lines does
-not satisfy this gate. Physical device acceptance and measurements follow.
+Both complete reference paths build under their pinned SDKs; host tests pass
+under ASan/UBSan; negative compile cases fail for the intended boundary; ESP32
+QEMU and physical ESP8266 runs demonstrate startup and structured health output.
+The HW-364A run reports `health:1`, increasing completed frame sequences, and
+zero transfer failures. A pair of constant JSON lines does not satisfy this
+gate. Physical device acceptance and measurements follow in Phase 2.
 
 ---
 

@@ -157,7 +157,7 @@ drivers/<type>/     driver sources + <type>.json manifest + tests
 handcode/<swctype>/ SWC sources + manifest + tests
 soc/ modules/ devkits/ overlays/    hardware description, four tiers
 v01-reference/      hand-built ESP32/host reference; becomes golden fixture #0 after qualification
-v01-hw364a-reference/  planned ESP8266/OLED reference; future fixture #1
+v01-hw364a-reference/  hand-built ESP8266/OLED reference; future fixture #1
 code/               generated output — generated artifacts only
 test/               generated host-test project + QEMU model
 project.json        the composition

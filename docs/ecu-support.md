@@ -2,8 +2,8 @@
 
 Documentation contract for PROJECT_DEFINITION.md 2.2.0, updated 2026-09-19.
 The ESP32 reference and host-testable SSD1306/display pieces are implemented
-in `v01-reference/`; target-specific ESP8266 services, manifests and physical
-qualification remain pending.
+in `v01-reference/`; the native ESP8266/HW-364A bring-up reference is in
+`v01-hw364a-reference/`. Full physical qualification remains pending.
 
 ## Composition and support status
 
@@ -15,8 +15,8 @@ image. Selecting two different ECU types does not create a network between them.
 | ECU target | Board choice | Devices selected by default | Status |
 |---|---|---|---|
 | `esp32` | HW-394 | Climate-demo adds two external BME280s and a fan | Runtime builds; QEMU and HW-394 boot smoke passed; real sensor evidence pending |
-| `esp8266` | Generic/raw ESP8266 | None | New planned target; actual module, flash and wiring must be supplied |
-| `esp8266` | HW-364A | One `ssd1306` instance named `onboardOled`, including its I2C wiring/address reservations | Host driver/display slice exists; backend and physical confirmation pending |
+| `esp8266` | Generic/raw ESP8266 | None | Baseline backend builds; concrete module/wiring and driver qualification required |
+| `esp8266` | HW-364A | One `ssd1306` instance named `onboardOled`, including its I2C wiring/address reservations | Native build/boot/I2C/OLED transfer baseline passed; acceptance measurements pending |
 
 "Raw ESP8266" is a selectable generic configuration of the same ECU backend,
 not another SDK port. It still requires a concrete module/package and a wiring
@@ -37,7 +37,7 @@ be rejected before generation; no empty driver stubs may count as support.
 |---|---|---|---|
 | `ssd1306` device driver | Compatible via MCAL I2c; external wiring and panel configuration required | Compatible via MCAL I2c; explicit instance/wiring | Same driver, automatically instantiated by board defaults |
 | `bme280` device driver | Existing compensation helper; transport and dual-sensor runtime pending | Planned portable driver via MCAL I2c; requires physical sensor tests | Optional external sensor; share OLED bus only with verified wiring, distinct address, compatible speed and schedule |
-| Port/Dio, I2c, Uart | Required MCAL services; reference implementations pending | Required target-specific MCAL services | Reuses generic ESP8266 services |
+| Port/Dio, I2c, Uart | Required MCAL services; reference implementations pending | I2C baseline implemented; remaining services are not qualified | Reuses generic ESP8266 services |
 | Time/watchdog, Os/EcuM | ESP32-specific implementation of common runtime contract pending | ESP8266 adapters must be qualified | Reuses generic ESP8266 adapters |
 | Pwm/IoHwAb fan | Required by climate reference; pending | Not in initial qualified subset; add only after a native implementation and tests | Same restriction as generic ESP8266 |
 | Other catalog modules | Selectable only after target-specific qualification | No inheritance of ESP32 peripheral inventory | Same restriction as generic ESP8266 |
@@ -108,34 +108,38 @@ take precedence over configurable defaults in the §3.2 merge model.
 
 ## Backend qualification
 
-ESP32 remains on ESP-IDF 5.2.3. The proposed ESP8266 backend is
+ESP32 remains on ESP-IDF 5.2.3. The implemented ESP8266 baseline backend is
 [ESP8266 RTOS SDK](https://github.com/espressif/ESP8266_RTOS_SDK), an independent
-SDK. The current candidate is **ESP8266 RTOS SDK `v3.4` with its GCC 8.4.0
-toolchain**: Espressif marks v3.4 as the latest release and its release notes
-specify GCC 8.4.0. The SDK support policy identifies v3.4 as the LTS release
-line. This is a candidate pin, not qualification evidence; Luna must verify the
-tag commit, Linux install, build, flash and runtime behavior before making the
-profile selectable. Record the exact commit/tool archive and dependency
-environment in the lock. The current `toolchain.env`, installer and `check-env`
-cover ESP32 only. Each backend gets isolated build outputs and SDK environments.
+SDK. It is pinned locally to **ESP8266 RTOS SDK `v3.4`, commit
+`89a3f254b63819035f65d9c5dcdae8864f1a6a8a`, with GCC 8.4.0**. The native
+`v01-hw364a-reference/` build, flash hashes, boot output and repeated OLED
+transfers are recorded in [measurements](measurements.md). This is a bring-up
+baseline, not full qualification; the current `toolchain.env`, installer and
+`check-env` still cover ESP32 only. Each backend gets isolated build outputs and
+SDK environments.
 
 The [v3.4 release](https://github.com/espressif/ESP8266_RTOS_SDK/releases/tag/v3.4),
 [support policy](https://github.com/espressif/ESP8266_RTOS_SDK/blob/master/SUPPORT_POLICY_EN.md)
 and [Linux setup guide](https://github.com/espressif/ESP8266_RTOS_SDK/blob/master/docs/en/get-started/linux-setup.rst)
-are the starting sources. Luna must demonstrate build/flash/monitor and document
-the commands before marking it available.
+are the starting sources. The baseline commands are
+`make -C v01-hw364a-reference -j2 all`,
+`make -C v01-hw364a-reference flash ESPPORT=/dev/ttyUSB0`, and the SDK monitor
+at 74880 baud. Broader profile availability still requires the acceptance work.
 
 The target schema revision must separate `target.ecu`, SoC/module/board paths,
 and `target.sdk` family/revision. The lock records resolved board devices/pins,
 driver sources, SDK/compiler and effective configuration. A generic ESP8266
 project and an HW-364A project use the same ECU/SDK selection.
 
-Qualify one-core scheduling, effective tick/priority limits, monotonic time,
-critical sections, bounded I2C, static allocation, startup gate, deadline/skip
-checks, watchdog task coverage, reset reasons and retained boot-loop handling.
-Measure how time/reset history survives resets. Do not reuse ESP32 TWDT APIs,
-core-affinity calls or RTC declarations without establishing equivalents.
-An unsatisfied runtime requirement leaves this target in bring-up status.
+The baseline confirms one-core startup, bounded I2C command execution, the
+startup display path and repeated frame completion. Full qualification still
+requires effective tick/priority limits, monotonic time, critical sections,
+static allocation, deadline/skip checks, watchdog task coverage, reset reasons
+and retained boot-loop handling. The target uses the SDK's global
+`esp_task_wdt_reset()` feed; per-task coverage and SAFE_HALT behavior remain to
+be established. Do not reuse ESP32 TWDT APIs, core-affinity calls or RTC
+declarations without establishing equivalents. An unsatisfied runtime
+requirement leaves this target in bring-up status.
 
 The [SDK I2C API](https://docs.espressif.com/projects/esp8266-rtos-sdk/en/latest/api-reference/peripherals/i2c.html)
 documents synchronous command-link operations. Inspect the pinned implementation
@@ -180,13 +184,14 @@ cannot substitute for health reporting or actuator failsafes.
 
 ## HW-364A acceptance
 
-All tests below are **planned / not run**. Keep hardware evidence separate from
-host mocks and upstream library smoke tests in [measurements.md](measurements.md).
+Bring-up has partially passed TST-OLED-01 and the serial-transfer portion of
+TST-OLED-02. Keep hardware evidence separate from host mocks and upstream
+library smoke tests in [measurements.md](measurements.md).
 
 | Test | Required evidence |
 |---|---|
-| TST-OLED-01 | Physical identity, flash capacity, numeric wiring, pull-up/electrical record and I2C ACK on the documented bus |
-| TST-OLED-02 | Merlin driver displays clear/fill, corner markers, checkerboard and changing counter correctly; visible confirmation plus serial frame sequence |
+| TST-OLED-01 | Partial: ESP8266EX, 2 MB, GPIO14/12 and 0x3C ACK verified; pull-up/electrical record remains |
+| TST-OLED-02 | Partial: native Merlin init and repeated frame sequences with zero failures; visible pattern confirmation remains |
 | TST-OLED-03 | Measured chunk and complete-frame timings; periodic supervision remains responsive during refresh and logging |
 | TST-OLED-04 | Injected NACK/TIMEOUT/stuck-bus errors remain distinct; bounded retries/recovery/cooldown; known-position redraw after recovery |
 | TST-OLED-05 | Failed init produces DEGRADED with serial diagnostics, no boot loop and no false ready/frame-complete report |

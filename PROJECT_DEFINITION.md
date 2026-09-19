@@ -1,8 +1,8 @@
 # Merlin ECU Project Wizard — Project Definition
 
-**Document version:** 2.2.0 · **Status:** scope amended by owner request, 2026-09-19; implementation pending
+**Document version:** 2.2.0 · **Status:** scope amended by owner request, 2026-09-19; reference bring-up implemented, schemas/generator pending
 **Supersedes:** 2.1.0 for ECU scope, target-specific contracts, and reference status. The schema examples below remain 2.1.0 drafts until the Phase 3 revision; no frozen schemas have shipped.
-**Decisions on record:** native ESP-IDF CMake for ESP32; generate only hardware-proven reference paths. Owner expansion: add generic ESP8266 as an ECU target, HW-364A as a board profile, and SSD1306 as a reusable device driver automatically selected by that board. The hand-built ESP32/host reference slice is now implemented; ESP8266 qualification remains separate.
+**Decisions on record:** native ESP-IDF CMake for ESP32; generate only hardware-proven reference paths. Owner expansion: add generic ESP8266 as an ECU target, HW-364A as a board profile, and SSD1306 as a reusable device driver automatically selected by that board. The hand-built ESP32/host and ESP8266/HW-364A bring-up reference slices are implemented; full ESP8266 qualification remains separate.
 
 ---
 
@@ -17,7 +17,7 @@ This project **reuses AUTOSAR methodology and naming for structure and disciplin
 **In scope:** wizard CLI; JSON data models + schemas; deterministic generation; resource/pin allocation; RTE, OS, EcuM, and supervision generation; ESP32 QEMU boot test model; Linux installation; two independently built ECU profiles and a local HW-364A OLED driver bench.
 **Out of scope (v1.x):** OTA, debugging UI, multi-ECU communication stacks.
 
-Multiple supported ECU types means one target, image, configuration, and lock per project. Cross-ECU RTE connections, network coordination, and synchronized clocks are not part of this expansion. Generic ESP8266 and its HW-364A board profile are in the v0.1 reference/v1.0 generator scope, conditional on their qualification gates; they are currently **planned**, not implemented or hardware-validated. [ECU support and Luna handoff](docs/ecu-support.md) defines those gates and the driver compatibility matrix.
+Multiple supported ECU types means one target, image, configuration, and lock per project. Cross-ECU RTE connections, network coordination, and synchronized clocks are not part of this expansion. Generic ESP8266 and its HW-364A board profile are in the v0.1 reference/v1.0 generator scope, conditional on their qualification gates; the native bring-up reference is implemented and hardware-tested for boot/I2C/OLED transfer, but is not yet fully qualified. [ECU support and Luna handoff](docs/ecu-support.md) defines those gates and the driver compatibility matrix.
 
 ### 1.3 Positioning & Prior Art
 - **Vs. Zephyr:** Zephyr already provides devicetree (≈ board manifests), bindings (≈ driver manifests), Kconfig (≈ module selection), *and* a task-watchdog facility. This project's differentiators are the **signal-level RTE**, **provider-agnostic port composition**, and **generated, integrated supervision** (task wrapper → Hm → EcuM as one contract). The devicetree **overlay** model is adopted for project-specific wiring (v1.1).
@@ -71,8 +71,8 @@ Component `REQUIRES` matrices (§7.3) are **defense-in-depth only** — ESP-IDF 
 | ECU / board profile | Reference workload | Backend | Current evidence |
 |---|---|---|---|
 | `esp32` / HW-394 | Two BME280s, climate controller, PWM fan | ESP-IDF 5.2.3, native CMake | Partial reference and host tests; ESP32 hardware boot smoke only |
-| `esp8266` / generic | Explicitly chosen drivers and wiring; no default OLED | ESP8266 RTOS SDK v3.4 candidate, GCC 8.4.0 | Documentation only; backend unqualified |
-| `esp8266` / HW-364A | Default SSD1306 instance; demo binds display SWC and health reporting | Same generic ESP8266 backend | Documentation and upstream examples only |
+| `esp8266` / generic | Explicitly chosen drivers and wiring; no default OLED | ESP8266 RTOS SDK v3.4, GCC 8.4.0 | Baseline backend and I2C adapter implemented; qualification pending |
+| `esp8266` / HW-364A | Default SSD1306 instance; demo binds display SWC and health reporting | Same generic ESP8266 backend | Native boot/OLED transfer baseline passed; measurements pending |
 | Future ESP32-S3/C3 | To be defined in v1.2 | Target-specific SDK profiles | Planned |
 
 The module catalog above is a capability catalog, not a promise that every ECU implements every module. The initial ESP8266 subset requires Port/Dio, I2c, Uart, time/watchdog services and Os/Rte/EcuM/Hm/Det/Log. The portable device catalog includes SSD1306 and BME280 through MCAL I2c, with hardware support claimed only after each ECU/device combination passes tests. HW-364A uses that same catalog and adds an SSD1306 instance by default. PWM, ESP32 LEDC/RMT/ADC2, and multi-core APIs are not inherited by ESP8266. Unsupported selections fail validation (VAL-026). HW-364B is mentioned upstream but is not a separately qualified Merlin target.
@@ -120,7 +120,7 @@ merlin/
 ├── devkits/devkit-*.json    # board header facts, pull-ups, onboard devices
 ├── overlays/                # per-project wiring deltas (v1.1)
 ├── v01-reference/           # hand-built ESP32/host reference; future golden fixture #0 (§11)
-├── v01-hw364a-reference/    # planned second reference: ESP8266 + OLED, fixture #1
+├── v01-hw364a-reference/    # hand-built ESP8266 + OLED reference, fixture #1 candidate
 ├── project.json             # composition entry point
 ├── project.lock             # generation record (§3.3)
 ├── install.sh · requirements.txt · docs/
@@ -660,7 +660,7 @@ Requirement IDs `REQ-ARCH/GEN/RUN/DATA/BSW-nnn`, each mapped to design section, 
 
 The traceability matrix also includes REQ-ECU-001…003, REQ-DISP-001…003, REQ-BOARD-001 and REQ-DRV-001 for target selection, backend qualification, reproducibility, OLED composition, bounded transfers and board evidence. These are requirements awaiting implementation evidence.
 
-**NFRs:** generation ≤ 30 s for ≤ 50 device instances / 30 SWC instances / 8 tasks (generator capacity, not a promise that either MCU can host that workload); SDK/compiler pinned per ECU lock (ESP32: ESP-IDF 5.2.3; ESP8266 candidate: ESP8266 RTOS SDK v3.4/GCC 8.4.0, qualification pending); Linux reference OS.
+**NFRs:** generation ≤ 30 s for ≤ 50 device instances / 30 SWC instances / 8 tasks (generator capacity, not a promise that either MCU can host that workload); SDK/compiler pinned per ECU lock (ESP32: ESP-IDF 5.2.3; ESP8266 baseline: ESP8266 RTOS SDK v3.4/GCC 8.4.0, full qualification pending); Linux reference OS.
 
 ---
 
@@ -679,7 +679,7 @@ The traceability matrix also includes REQ-ECU-001…003, REQ-DISP-001…003, REQ
 
 ## 11. Reference Implementation (v0.1) — Status
 
-`v01-reference/` contains the hand-built ESP32 climate path: MCAL, dual-instance BME280 transport, RTE, PID/controller, PWM fan path, static tasks/startup gate, supervision, structured fake-sensor output, host tests and a provider-agnostic host OLED/display slice. It builds and has booted in QEMU and on HW-394. The default smoke image uses fake sensors; real external sensor measurements, ESP8266 backend qualification and HW-364A physical evidence remain open. The intended completed tree is:
+`v01-reference/` contains the hand-built ESP32 climate path: MCAL, dual-instance BME280 transport, RTE, PID/controller, PWM fan path, static tasks/startup gate, supervision, structured fake-sensor output, host tests and a provider-agnostic host OLED/display slice. It builds and has booted in QEMU and on HW-394. The default smoke image uses fake sensors; real external sensor measurements remain open. `v01-hw364a-reference/` is the hand-built ESP8266/HW-364A companion; it builds, flashes, boots and transfers repeated frames on the connected unit. Full sensor, timing, fault and supervision measurements remain open. The intended completed tree is:
 
 ```
 v01-reference/
@@ -707,8 +707,8 @@ When complete and measured, this tree becomes **golden fixture #0**. Planned `v0
 2. **v1.1 UART multiplexing** — XCP tuning and log on one framed UART vs. a dedicated second UART.
 3. **v1.1 async driver API shape** — preferred: async core with a synchronous bounded facade; alternative: completion callbacks. Decide at v1.1 design.
 4. **Substitute-value policy** (v1.1) — which interfaces declare per-element substitutes and who owns substitution on INVALID.
-5. **HW-364A board identity** — confirm processor/module marking, flash size, OLED wiring/controller behavior, fitted pull-ups, header exposure and reset behavior on the physical unit. Resolve reference D-label ambiguity using GPIO numbers.
-6. **ESP8266 backend qualification** — verify the candidate ESP8266 RTOS SDK v3.4/GCC 8.4.0 pin, prove §6.10, and record build/environment instructions before claiming support. No native ESP8266 implementation exists yet.
+5. **HW-364A board identity** — processor identity, 2 MB flash, OLED wiring/controller ACK and GPIO14/GPIO12 are recorded; fitted pull-ups, header exposure and reset behavior remain. Resolve reference D-label ambiguity using GPIO numbers.
+6. **ESP8266 backend qualification** — the v3.4/GCC 8.4.0 pin, native build/flash/boot and repeated OLED transfers are recorded; §6.10 watchdog, timing, reset-history and SAFE_HALT proof remain.
 7. **OLED execution contract** — measure bounded chunk/command time, recovery and full-frame latency under load; freeze static buffer ownership and scheduling from evidence.
 
 ---
