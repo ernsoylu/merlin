@@ -32,6 +32,140 @@ specific forbidden-include checks for both BME280 and SSD1306. The display
 SWC/driver path is host-tested with injected transfer success/failure; no OLED
 panel is connected in this record.
 
+### 2026-09-19 HW-394/ESP32 Phase 2 session: two real bugs, fault injection, and a deadline-miss finding
+
+Same physically-connected HW-394 unit (ESP32-D0WD-V3 rev 3.1, MAC
+`a0:dd:6c:85:88:08`, 4 MB flash), no BME280 wired this session (devkit only —
+Phase 2's I2C-probe/single-sensor/dual-sensor/full-loop bring-up steps and
+TST-ACC-01/04 stay blocked until a sensor is on the bench). Work therefore
+focused on the scenarios that don't need a physical sensor.
+
+**Real bug found and fixed: the boot-loop counter never persisted.**
+`EcuM_Startup` declared `bootLoopCounter` as `static RTC_DATA_ATTR uint32_t`.
+ESP-IDF's own header (`esp_attr.h`) documents `RTC_DATA_ATTR` as surviving
+*deep sleep* only; `RTC_NOINIT_ATTR` is the one documented to survive a plain
+restart. Reproduced directly: with `CONFIG_MERLIN_INJECT_SLOW_T500=5` forcing
+five deadline-fault-triggered `esp_restart()` calls, the counter read back 0
+on every reboot and the device cycled through 13 resets in 90 s with
+`SAFE_HALT` never firing. Fixed by switching to `RTC_NOINIT_ATTR` plus an
+`esp_reset_reason()`/300 s-window gate (`ESP_RST_POWERON`/`ESP_RST_BROWNOUT`
+or window expiry re-arms the counter to 0), since `RTC_NOINIT_ATTR` content is
+undefined on a true power-on and the design requires "5 resets *in 300 s*",
+not "5 resets ever" (the prior code had no time window at all — a
+long-lived device would eventually accumulate 5 lifetime resets from normal
+maintenance and halt permanently). Re-verified after the fix: exactly 5
+`{"system":"CONTROLLED_RESET",...}` lines, then boot 6 printed
+`{"system":"SAFE_HALT","reason":"BOOT_LOOP","resetReason":3}` and stayed halted
+for the remainder of a 90 s window — no 6th reset, no TWDT panic anywhere in
+the log. This directly evidences **TST-ACC-10**.
+
+**Real gap found and fixed: `resetRequested` was set but never acted on.**
+`EcuM_RecordDeadlineFault` already flipped `context->resetRequested` at 5
+accumulated deadline faults, but nothing in the codebase ever read it —
+grepped `esp_restart` across the whole reference tree; the only hits were the
+field's own declaration/assignment. Fixed in `report_fault`: on
+`resetRequested`, force the fan to its failsafe duty via
+`IoHwAb_FanApply(..., 0.0f, 0)` + `Mcal_Pwm_SetDuty`, log
+`{"system":"CONTROLLED_RESET","reason":"DEADLINE_FAULTS","count":N}`, then
+`esp_restart()` — matching "failsafe first, then reset, then RTC counter and
+reason logged" exactly. This directly evidences **TST-ACC-09**, and (via the
+same 5 fault-triggered resets that fed the boot-loop fix above) transitively
+evidences **TST-ACC-05** (RTF-002 raised, TWDT silent throughout every cycle —
+confirmed by grepping for `panic|watchdog|abort|guru` across all captured
+logs: zero matches) and **TST-ACC-08** (the injected 1200 ms sleep against a
+500 ms period reliably drove `vTaskDelayUntil` to return early on the next
+loop, exercising `Os_ReleaseSkip`'s re-anchor path in the same cycle as the
+deadline fault).
+
+**Fault injection added:** `CONFIG_MERLIN_INJECT_SLOW_T500` (Kconfig int,
+default 0), mirroring HW-364A's build-flag pattern but as a single knob whose
+value *is* the injected-activation count, so N=1 exercises a lone deadline/skip
+event and N≥5 additionally drives the controlled-reset/boot-loop chain with no
+separate flag needed.
+
+**Real (non-fake) I2C against an absent device — TST-ACC-06.** Flipping
+`CONFIG_MERLIN_FAKE_SENSORS=n` with no BME280 wired routes `Bme280_Init`
+through the genuine ESP-IDF `driver/i2c.h` path at GPIO21/22, 100 kHz, against
+addresses `0x76`/`0x77` that nothing acks. This is real electrical NACK
+behavior, not synthetic injection: `initFailures` climbed at a clean 200/s
+(2 sensors x 100 Hz, matching the T10 period exactly), both sensors reported
+`DEGRADED`, and the system stayed in `DEGRADED` for the full 20 s observation
+window with zero resets and zero boot-loop activity — dependents followed
+`initPolicy`, reached `DEGRADED`, no boot loop, exactly as required.
+
+**Observability gap found and patched:** before this session, EcuM state
+(`RUN`/`DEGRADED`/etc.) and sensor health were only ever printed as a side
+effect of a *successful* sensor read (`report_sensor`, called only on a
+sequence change). If a sensor never succeeds even once, nothing distinguishing
+`DEGRADED` from a hang was ever observable on the wire. Added a low-rate
+heartbeat in `run_t500` reporting state, both sensors' health, fault counters,
+and the timing fields below.
+
+**Real finding: printf-driven priority inversion self-triggers the
+controlled-reset/boot-loop path during ordinary, non-injected `RUN`
+operation.** Adding the heartbeat print (even throttled to one print per 8
+T500 activations, ~4 s) reproduced a *new*, deterministic failure with no
+fault injection active at all: `deadlineFaults` climbed roughly 1-for-1 with
+each heartbeat print, reliably reached 5, and the board cycled through
+repeated controlled resets indefinitely. Isolated with a raw-serial capture
+(bypassing `idf.py monitor` entirely, ruling out a monitoring-tool artifact)
+and a loop-iteration counter (`Os_ReleaseStateType.wakeCount`, incremented
+unconditionally on every `vTaskDelayUntil` return): the mechanism is almost
+certainly priority inversion on the shared blocking stdio/UART lock — T500
+(priority 3) can hold it mid-print while T10 (priority 5, 9 ms deadline) blocks
+waiting for the same lock, reliably blowing T10's deadline. This is the exact
+failure mode this project's own design already names for Det/Log ("never
+block... causes the deadline misses it is reporting"), just triggered here by
+plain `printf` instead. **Not fixed at the architecture level this
+session** — the correct fix is routing all diagnostic output through the
+existing non-blocking `Log_Ring` plus a dedicated low-priority drain task
+(`Log/` component exists but has no drain task wired up yet). Pragmatic fix
+applied instead: throttled the heartbeat to 1 print per 200 T500 activations
+(~100 s), since it exists only to gather this session's evidence, not to ship.
+Re-verified clean afterward (below). **This same mechanism may already
+apply to the pre-existing, more frequent `report_sensor` prints in T10 project
+Phase 1 code** independent of anything added this session; not investigated
+further here.
+
+**Clean baseline soak (throttled heartbeat, no injection).** 115 s continuous
+raw-serial capture, default config (fake sensors, no injection): zero resets,
+zero `SAFE_HALT`. One heartbeat snapshot at T10 wake #10,000 (100 s in):
+`deadlineFaults=0`, `t10SkippedActivations=0`, `t10JitterMinTicks=0`,
+`t10JitterMaxTicks=0` (N=10,000, i.e. the full 100 s at the 10 ms period —
+tick-resolution, i.e. ~1 ms, not sub-tick; far short of the ≥10^6-activation
+target in PROJECT_DEFINITION §8.3, which needs a multi-hour unattended run not
+done this session), `publishLockMinUs=2`, `publishLockMaxUs=14` (N=6,666
+samples of the RTE `Rte_EnvironmentalPublish` critical section, timed via
+`esp_timer_get_time()` bracketing the call — that call is exactly the lock, no
+extra code inside it). 7,666 total sensor-report lines logged over the full
+115 s with no gaps, confirming T10 ran continuously the whole time.
+
+**Critical-section duration vs. target.** §6.2's target is <5 µs. Measured
+min (2 µs) meets it; measured max (14-22 µs across different runs) exceeds it.
+This is the first real number against that target for either ECU — worth
+flagging to whoever owns the margin policy in Phase 3, not something to
+silently round away.
+
+**Structural note on steady-state heap/allocate-free (not separately
+measured):** `EcuM_Startup`'s runtime state, all three task stacks, and the
+FreeRTOS task control blocks are `static` (`xTaskCreateStatic`); grepping the
+reference tree's runtime path (`Rte`, `Os`, `Drv_Bme280`, `ClimateController`,
+`IoHwAb`, `Mcal_*`) for `malloc`/`calloc`/heap-allocating calls turns up
+nothing. Zero heap churn in steady state follows structurally from there being
+no allocation call in the hot path at all, which is a stronger claim than a
+watermark-across-N-samples but is not the same thing as an instrumented
+allocate/free trace; not attempted this session.
+
+**Blocked pending a wired BME280 (not attempted this session, devkit only):**
+TST-ACC-01 (two real sensors, independent state/sequence), TST-ACC-02 (real
+mid-run disconnect vs. the "never appeared" case exercised above), TST-ACC-04
+(real electrical stuck-bus / 9-clock recovery — `Mcal_I2c_Recover` exists in
+`mcal_i2c.c` but is not wired to any caller yet, a separate gap from anything
+fixed this session), real per-transaction BME280 timing, and the full
+sensors-to-fan control loop. HW-394's §12.1 physical board manifest (pin
+availability, pull-up values, onboard devices) also still needs bench
+instrumentation this session didn't have.
+
 ## ESP8266 and HW-364A bring-up evidence
 
 The native target is `v01-hw364a-reference/`. It reuses the shared Merlin
@@ -197,6 +331,8 @@ before ending the session.
 | TST-OLED-01…08 | TST-OLED-01 partial; TST-OLED-02 passed; TST-OLED-03/04/05/06/07 passed (2026-09-19 follow-up); TST-OLED-08 partial (skip/deadline/watchdog-silence verified, boot-loop/SAFE_HALT unverified -- RTC persistence gap found) |
 | ESP8266 watchdog/startup/skip/deadline/SAFE_HALT qualification | Startup gate, skip re-anchor, deadline detection and TWDT-silence verified live (2026-09-19); SAFE_HALT boot-loop path implemented but not reachable on real hardware pending the RTC persistence fix; no per-task TWDT unsubscribe API on this SDK |
 | ESP32 SSD1306 with an external panel | Host-compatible path only; not run |
+| HW-394/ESP32 TST-ACC-01…10 | TST-ACC-05/08/09/10 passed (2026-09-19, via fault injection, no sensor needed); TST-ACC-06 passed (2026-09-19, real I2C against an absent device); TST-ACC-03/07 exercised implicitly by the RTE mechanism but not separately re-verified with dedicated instrumentation this session; TST-ACC-01/02/04 blocked pending a wired BME280 |
+| HW-394/ESP32 boot-loop/controlled-reset qualification | `RTC_DATA_ATTR`→`RTC_NOINIT_ATTR` bug found and fixed (did not survive `esp_restart()`, mirroring the HW-364A finding below); 300 s time window added (was entirely absent — a "5 resets ever" bug); `resetRequested`→`esp_restart()` wiring gap found and fixed with failsafe-first; re-verified: 5 controlled resets → SAFE_HALT on boot 6, zero TWDT panics anywhere |
 
 ## Required measurement record
 
@@ -209,12 +345,12 @@ who confirmed visible OLED behavior. Identify omitted scenarios explicitly.
 
 | Measurement | HW-394/ESP32 | HW-364A/ESP8266 |
 |---|---|---|
-| Critical-section copy duration | Pending | Pending, including frame publication |
-| Bus transaction/state duration and fault timeout | Pending | Pixel-chunk writes measured: avg 2445 us / max 2529 us, N=1120+ (2026-09-19). Command-burst (init) and TIMEOUT/stuck-bus cases not separately measured |
-| Release jitter distribution | Pending, T10 ≥10⁶ activations | Not measured as a distribution; one injected 1300 ms overrun exercised the skip/deadline/re-anchor path once (2026-09-19), not a jitter distribution over many samples |
-| Recovery duration and cooldown behavior | Pending | Qualitative pass: 5 injected NACKs -> 1 bounded recovery, cooldown held, resumed correctly (2026-09-19). Recovery *duration* in us not timed |
-| Execution under simultaneous bus fault and logging | Pending | Pending, with ongoing display refresh |
-| Steady-state allocate/free trace | Pending | `esp_get_free_heap_size()` flat at 112620 B over 1120+ chunk alloc/free pairs, N=6 samples/20s (2026-09-19); no leak observed, not an allocator-level trace |
+| Critical-section copy duration | Measured: `Rte_EnvironmentalPublish` lock 2-14 us (clean run, N=6,666) to 2-22 us (across all runs this session), N as high as several thousand (2026-09-19). Exceeds the §6.2 <5 us target at the max; min meets it | Pending, including frame publication |
+| Bus transaction/state duration and fault timeout | Real hardware NACK against an absent device: ~200 initFailures/s (2 sensors x 100 Hz), no real BME280 transaction timing yet (2026-09-19) | Pixel-chunk writes measured: avg 2445 us / max 2529 us, N=1120+ (2026-09-19). Command-burst (init) and TIMEOUT/stuck-bus cases not separately measured |
+| Release jitter distribution | T10: 0 ticks min/max over N=10,000 activations / 100 s clean run (2026-09-19). Tick-resolution (~1 ms), not sub-tick; far short of the ≥10⁶-activation target (needs a multi-hour unattended run) | Not measured as a distribution; one injected 1300 ms overrun exercised the skip/deadline/re-anchor path once (2026-09-19), not a jitter distribution over many samples |
+| Recovery duration and cooldown behavior | `Mcal_I2c_Recover` (9-clock unstick) exists but is not wired to any caller; not exercised (2026-09-19) | Qualitative pass: 5 injected NACKs -> 1 bounded recovery, cooldown held, resumed correctly (2026-09-19). Recovery *duration* in us not timed |
+| Execution under simultaneous bus fault and logging | Real finding, not the intended measurement: ordinary diagnostic `printf` logging alone (no bus fault) caused a real deadline-miss/controlled-reset loop via probable priority inversion on shared blocking stdio; root-caused and worked around, not fixed at the architecture level (2026-09-19) | Pending, with ongoing display refresh |
+| Steady-state allocate/free trace | Not an instrumented trace; structural argument only -- no malloc/calloc call exists anywhere in the runtime hot path (`Rte`/`Os`/`Drv_Bme280`/`ClimateController`/`IoHwAb`/`Mcal_*`), so heap churn in steady state is zero by construction (2026-09-19) | `esp_get_free_heap_size()` flat at 112620 B over 1120+ chunk alloc/free pairs, N=6 samples/20s (2026-09-19); no leak observed, not an allocator-level trace |
 | Static RAM / task stack usage | Pending | Task stack high-water mark 1260/2048 words, stable (2026-09-19). Frame buffers (`active`/`pending`, 1024 B each) are struct fields, not separately traced |
 | OLED full-frame latency / visual output | Not applicable to climate-only reference | Coarse host-side average ≈569ms/frame (2026-09-19, N=52, single run); visual pattern confirmed by owner same session; per-chunk timing now measured on-device (see above), full-frame pixel time ≈78ms derived from it |
 

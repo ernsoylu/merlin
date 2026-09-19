@@ -21,4 +21,17 @@ config MERLIN_FAN_GPIO
     range 0 39
     default 2
 
+config MERLIN_INJECT_SLOW_T500
+    int "Inject N slow T500 activations (fault-injection test, 0 = disabled)"
+    range 0 20
+    default 0
+    help
+        When nonzero, the first N activations of T500 sleep long enough to
+        miss their own deadline and skip the next release, exercising
+        RTF-002 and the skip/re-anchor path. At N>=5 within one boot this
+        also drives EcuM's controlled-reset path; since the setting persists
+        across the resulting esp_restart(), N>=5 repeats the cycle on every
+        boot until EcuM's RTC boot-loop counter reaches SAFE_HALT. Leave at
+        0 for normal reference operation.
+
 endmenu

@@ -19,6 +19,7 @@ static void task_entry(void *argument)
 
     for (;;) {
         vTaskDelayUntil(&lastWake, periodTicks);
+        config->release.wakeCount++;
         const TickType_t actualWake = xTaskGetTickCount();
         if (Os_ReleaseSkip(&config->release, actualWake, periodTicks)) {
             esp_task_wdt_reset();
@@ -96,6 +97,14 @@ int Os_ReleaseRecordWake(Os_ReleaseStateType *state, int64_t actualTick)
     if (state->periodTicks <= 0) {
         return 0;
     }
+    const int64_t jitterTicks = actualTick - state->expectedTick;
+    if (state->jitterSamples == 0U || jitterTicks < state->jitterMinTicks) {
+        state->jitterMinTicks = jitterTicks;
+    }
+    if (jitterTicks > state->jitterMaxTicks) {
+        state->jitterMaxTicks = jitterTicks;
+    }
+    state->jitterSamples++;
     if (actualTick > state->expectedTick + state->jitterToleranceTicks) {
         state->lateActivations++;
         state->lastFault = OS_RTF_LATE_ACTIVATION;

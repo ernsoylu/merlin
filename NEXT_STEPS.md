@@ -14,7 +14,7 @@ deliverables exist — it is done when its **gate** holds.
 | 0 | Repository skeleton & toolchain | `check-env` green on a clean machine | **complete** |
 | 0E | ESP8266 backend qualification | generic ECU SDK/compiler pinned; build and runtime feasibility recorded | **complete; full behavioral/watchdog qualification is Phase 2** |
 | 1 | v0.1 reference firmware | complete HW-394 and HW-364A paths; host/layering tests; ESP32 QEMU and ESP8266 hardware boot | **complete; Phase 2 hardware acceptance pending** |
-| 2 | Hardware validation & measurement | §8.3 and OLED acceptance pass per ECU, numbers recorded | **HW-364A: TST-OLED-02/03/04/05/06/07 passed, TST-OLED-08 partial (RTC boot-loop gap found), TST-OLED-01 partial; HW-394 §8.3 not started (board not on bench this session)** |
+| 2 | Hardware validation & measurement | §8.3 and OLED acceptance pass per ECU, numbers recorded | **HW-364A: TST-OLED-02/03/04/05/06/07 passed, TST-OLED-08 partial (RTC boot-loop gap found), TST-OLED-01 partial. HW-394: TST-ACC-05/06/08/09/10 passed (fault injection + real absent-device NACK, no sensor needed), TST-ACC-01/02/04 blocked pending a wired BME280, TST-ACC-03/07 implicit/not separately re-verified; two real firmware bugs found and fixed (RTC persistence, unwired controlled-reset)** |
 | 3 | Schema freeze | measured numbers and modular ECU/board/driver model; §4 schema 2.2.0 frozen | **not started** |
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **not started** |
 | 5 | Generator MVP | fixtures #0/#1 regenerate byte-identical; generic ESP8266 and board-default selection work | **not started** |
@@ -28,7 +28,24 @@ ESP-IDF 5.2.3, passes the host suite and explicit BME280/OLED layering checks,
 passes parsed QEMU structured-output startup, and has booted on HW-394 with
 verified 4 MB flash writes. The HW-394 image currently uses deterministic fake
 sensors by default, so external BME280 wiring and measured control behavior
-remain open. The native ESP8266 RTOS SDK v3.4 HW-364A reference now builds,
+remain open. A same-day HW-394 Phase 2 session (devkit connected, no BME280
+wired) found and fixed two real bugs: the RTC boot-loop counter used
+`RTC_DATA_ATTR`, which ESP-IDF documents as surviving deep sleep only, not a
+plain `esp_restart()` (fixed with `RTC_NOINIT_ATTR` plus a 300 s window that
+didn't exist before at all); and `EcuM_RecordDeadlineFault`'s
+`resetRequested` flag was set but never acted on anywhere (fixed: fan forced
+to failsafe, reset logged, then `esp_restart()`). Re-verified end to end: 5
+controlled resets -> `SAFE_HALT` on boot 6, zero TWDT panics. A new
+`CONFIG_MERLIN_INJECT_SLOW_T500` Kconfig knob and the real (non-fake) I2C path
+against an unpopulated bus together evidenced TST-ACC-05/06/08/09/10 without
+needing a physical sensor; TST-ACC-01/02/04 stay blocked until a BME280 is
+wired. The session also found that ordinary diagnostic `printf` logging alone
+(no fault at all) can self-trigger the controlled-reset/boot-loop path via
+likely priority inversion on shared blocking stdio -- root-caused, worked
+around for this session's instrumentation, not fixed at the architecture
+level (the durable fix is routing output through the existing `Log_Ring` plus
+a dedicated low-priority drain task, which isn't wired up yet). See
+[measurements](docs/measurements.md) for full detail. The native ESP8266 RTOS SDK v3.4 HW-364A reference now builds,
 hash-verifies its flash writes, boots the identified ESP8266EX/2 MB unit, and
 repeatedly transfers frames to the OLED at GPIO14/GPIO12, address 0x3C. A
 2026-09-19 re-run of the unmodified reference found the OLED init NACKing on

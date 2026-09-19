@@ -16,6 +16,10 @@ typedef struct {
     uint32_t lateActivations;
     uint32_t deadlineMisses;
     uint32_t lastFault;
+    int64_t jitterMinTicks;
+    int64_t jitterMaxTicks;
+    uint32_t jitterSamples;
+    uint32_t wakeCount;
 } Os_ReleaseStateType;
 
 void Os_ReleaseInit(Os_ReleaseStateType *state, int64_t firstBoundary);

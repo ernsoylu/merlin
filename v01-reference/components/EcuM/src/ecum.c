@@ -105,6 +105,10 @@ typedef struct {
     IoHwAb_FanType fan;
     Mcal_PwmHandleType fanPwm;
     EcuM_FakeI2cType fake;
+    int64_t publishMinUs;
+    int64_t publishMaxUs;
+    uint32_t publishSamples;
+    const Os_ReleaseStateType *t10Release;
 } EcuM_RuntimeType;
 
 static void put_u16(uint8_t *data, uint16_t value)
@@ -194,6 +198,14 @@ static void report_fault(void *argument, uint32_t fault, int64_t value)
     (void)value;
     if (fault == OS_RTF_DEADLINE) {
         EcuM_RecordDeadlineFault(&runtime->context);
+        if (runtime->context.resetRequested) {
+            /* Failsafe first: drive the actuator off before the reset takes effect. */
+            const float failsafeDuty = IoHwAb_FanApply(&runtime->fan, 0.0f, 0);
+            (void)Mcal_Pwm_SetDuty(&runtime->fanPwm, (uint16_t)(failsafeDuty * 1000.0f));
+            printf("{\"system\":\"CONTROLLED_RESET\",\"reason\":\"DEADLINE_FAULTS\",\"count\":%u}\n",
+                   (unsigned)runtime->context.controlledResets);
+            esp_restart();
+        }
     }
 }
 
@@ -206,6 +218,17 @@ static const char *sensor_health(Bme280_HealthType health)
         return "DEGRADED";
     }
     return "INITIAL";
+}
+
+static const char *ecum_state_name(EcuM_StateType state)
+{
+    switch (state) {
+    case ECUM_RUN: return "RUN";
+    case ECUM_DEGRADED: return "DEGRADED";
+    case ECUM_SHUTDOWN: return "SHUTDOWN";
+    case ECUM_SAFE_HALT: return "SAFE_HALT";
+    default: return "STARTUP";
+    }
 }
 
 static void report_sensor(const Bme280_InstanceType *sensor, const char *name)
@@ -229,7 +252,16 @@ static void run_t10(void *argument)
         if (runtime->sensors[i].sequence != sequence) {
             Rte_EnvironmentalDataType sample;
             Bme280_CopyEnvironmental(&runtime->sensors[i], &sample);
+            const int64_t lockStartUs = esp_timer_get_time();
             Rte_EnvironmentalPublish(&runtime->samples[i], &sample);
+            const int64_t lockUs = esp_timer_get_time() - lockStartUs;
+            if (runtime->publishSamples == 0U || lockUs < runtime->publishMinUs) {
+                runtime->publishMinUs = lockUs;
+            }
+            if (lockUs > runtime->publishMaxUs) {
+                runtime->publishMaxUs = lockUs;
+            }
+            runtime->publishSamples++;
             report_sensor(&runtime->sensors[i],
                           i == 0U ? "ambientSensor" : "enclosureSensor");
         }
@@ -255,15 +287,62 @@ static void run_t100(void *argument)
 static void run_t500(void *argument)
 {
     EcuM_RuntimeType *runtime = argument;
+#if CONFIG_MERLIN_INJECT_SLOW_T500 > 0
+    static uint32_t s_injectRemaining = CONFIG_MERLIN_INJECT_SLOW_T500;
+    if (s_injectRemaining > 0U) {
+        s_injectRemaining--;
+        vTaskDelay(pdMS_TO_TICKS(1200U));
+    }
+#endif
     EcuM_RecordRunActivation(&runtime->context);
     if (runtime->context.initFailures != 0U) {
         runtime->context.state = ECUM_DEGRADED;
     }
+    /* Heartbeat: sensor success reports are event-driven (only on a new
+     * acquisition), so this is the only periodic evidence of overall state
+     * when a sensor never succeeds at all. Measured on real HW-394: even an
+     * 8x-throttled (~4s) print here still produced a deadline fault on
+     * nearly every occurrence -- printf shares a blocking stdio lock across
+     * tasks of different priority, so a lower-priority T500 print can hold
+     * it while higher-priority T10 is blocked waiting on the same lock
+     * (priority inversion), which then misses T10's tight 9ms deadline. This
+     * is exactly the failure mode this project's own design docs warn about
+     * for Det/Log ("never block"); the durable fix is routing all diagnostic
+     * output through the existing non-blocking Log_Ring plus a dedicated
+     * low-priority drain task, not attempted here. Throttled hard instead,
+     * since this print exists only to gather Phase 2 evidence. */
+    static uint16_t s_heartbeatDivider;
+    if (++s_heartbeatDivider < 200U) {
+        return;
+    }
+    s_heartbeatDivider = 0U;
+    printf("{\"heartbeat\":\"%s\",\"ambientSensor\":\"%s\",\"enclosureSensor\":\"%s\","
+           "\"initFailures\":%u,\"deadlineFaults\":%u,"
+           "\"publishLockMinUs\":%lld,\"publishLockMaxUs\":%lld,\"publishSamples\":%u,"
+           "\"t10JitterMinTicks\":%lld,\"t10JitterMaxTicks\":%lld,\"t10JitterSamples\":%u,"
+           "\"t10WakeCount\":%u,\"t10SkippedActivations\":%u}\n",
+           ecum_state_name(runtime->context.state),
+           sensor_health(runtime->sensors[0].health),
+           sensor_health(runtime->sensors[1].health),
+           (unsigned)runtime->context.initFailures,
+           (unsigned)runtime->context.deadlineFaults,
+           (long long)runtime->publishMinUs, (long long)runtime->publishMaxUs,
+           (unsigned)runtime->publishSamples,
+           (long long)runtime->t10Release->jitterMinTicks,
+           (long long)runtime->t10Release->jitterMaxTicks,
+           (unsigned)runtime->t10Release->jitterSamples,
+           (unsigned)runtime->t10Release->wakeCount,
+           (unsigned)runtime->t10Release->skippedActivations);
 }
 
 void EcuM_Startup(void)
 {
-    static RTC_DATA_ATTR uint32_t bootLoopCounter;
+    /* RTC_DATA_ATTR only survives deep sleep; RTC_NOINIT_ATTR is the one that
+     * survives esp_restart()/watchdog/brownout resets, which is what a
+     * boot-loop counter needs. Its content is undefined on a true power-on,
+     * so an ESP_RST_POWERON/BROWNOUT reset (or window expiry) re-arms it. */
+    static RTC_NOINIT_ATTR uint32_t bootLoopCounter;
+    static RTC_NOINIT_ATTR int64_t bootLoopWindowStartUs;
     static EcuM_RuntimeType runtime;
     static Os_StackType t10Stack[2048];
     static Os_StackType t100Stack[2048];
@@ -289,10 +368,19 @@ void EcuM_Startup(void)
 
     EcuM_ContextInit(&runtime.context, 0U);
     runtime.context.bootLoopCounter = &bootLoopCounter;
+    const esp_reset_reason_t resetReason = esp_reset_reason();
+    const int64_t nowUs = esp_timer_get_time();
+    const int freshWindow = resetReason == ESP_RST_POWERON ||
+                            resetReason == ESP_RST_BROWNOUT ||
+                            (nowUs - bootLoopWindowStartUs) > 300000000LL;
+    if (freshWindow) {
+        bootLoopCounter = 0U;
+        bootLoopWindowStartUs = nowUs;
+    }
     if (bootLoopCounter >= 5U) {
         EcuM_EnterSafeHalt(&runtime.context);
         printf("{\"system\":\"SAFE_HALT\",\"reason\":\"BOOT_LOOP\",\"resetReason\":%d}\n",
-               esp_reset_reason());
+               (int)resetReason);
         return;
     }
     bootLoopCounter++;
@@ -337,6 +425,7 @@ void EcuM_Startup(void)
     }
     ClimateController_Init(&runtime.controller, 22.0f);
     IoHwAb_FanInit(&runtime.fan, 2U, 1.0f);
+    runtime.t10Release = &t10.release;
     t10.context = &runtime;
     t100.context = &runtime;
     t500.context = &runtime;
