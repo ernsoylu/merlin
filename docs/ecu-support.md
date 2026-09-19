@@ -184,25 +184,44 @@ cannot substitute for health reporting or actuator failsafes.
 
 ## HW-364A acceptance
 
-Bring-up has partially passed TST-OLED-01 and the serial-transfer portion of
-TST-OLED-02. Keep hardware evidence separate from host mocks and upstream
-library smoke tests in [measurements.md](measurements.md).
+Bring-up has partially passed TST-OLED-01 and fully passed TST-OLED-02. A
+2026-09-19 re-run found the OLED init NACKing on 5/5 resets as committed (root
+cause: ESP8266 RTOS SDK v3.4 NACKs the first I2C transaction after
+`i2c_param_config`); a fix landed in `Mcal_I2c_Init`, was re-verified across
+6/6 resets and a 30 s sustained run, and the owner visually confirmed a
+correct moving pattern on the physical panel. See
+[measurements.md](measurements.md#2026-09-19-re-run-first-transaction-nack-found-and-fixed).
+
+A same-day follow-up session added a real startup gate, per-activation
+skip/deadline detection and TWDT feed, software fault injection (NACK burst,
+forced init failure, forced software reset), and per-chunk timing/heap/stack
+instrumentation to `v01-hw364a-reference/main/user_main.c`, then exercised
+TST-OLED-03/04/05/07 and the skip/deadline/watchdog half of TST-OLED-08 on the
+physically connected unit. See
+[measurements.md](measurements.md#2026-09-19-follow-up-fault-injection-timing-and-boot-loop-evidence)
+for the full record, including a real gap found in the boot-loop/SAFE_HALT
+mechanism: `RTC_DATA_ATTR` did not survive either an external reset-pin pulse
+or a software `esp_restart()` on this SDK/hardware combination in ten
+consecutive trials, so the 5-resets-in-300s SAFE_HALT path is implemented but
+unverified as working. Keep hardware evidence separate from host mocks and
+upstream library smoke tests in [measurements.md](measurements.md).
 
 | Test | Required evidence |
 |---|---|
-| TST-OLED-01 | Partial: ESP8266EX, 2 MB, GPIO14/12 and 0x3C ACK verified; pull-up/electrical record remains |
-| TST-OLED-02 | Partial: native Merlin init and repeated frame sequences with zero failures; visible pattern confirmation remains |
-| TST-OLED-03 | Measured chunk and complete-frame timings; periodic supervision remains responsive during refresh and logging |
-| TST-OLED-04 | Injected NACK/TIMEOUT/stuck-bus errors remain distinct; bounded retries/recovery/cooldown; known-position redraw after recovery |
-| TST-OLED-05 | Failed init produces DEGRADED with serial diagnostics, no boot loop and no false ready/frame-complete report |
-| TST-OLED-06 | Host boundary/packing checks and updates during transfer prove coherent active-frame ownership, bounded pending storage and independent instance state |
-| TST-OLED-07 | Steady-state allocation trace shows no display/control-path allocate/free; static RAM and stack usage recorded |
-| TST-OLED-08 | Actual startup gate, skip/deadline fault, watchdog task coverage and terminal SAFE_HALT behavior pass on the ESP8266 backend |
+| TST-OLED-01 | Partial: ESP8266EX, 2 MB, GPIO14/12 and 0x3C ACK verified; pull-up/electrical record still needs a multimeter at the bench |
+| TST-OLED-02 | Passed: native Merlin init and repeated frame sequences with zero failures (re-verified 2026-09-19, 6/6 resets + 30s sustained run), and the owner visually confirmed a correct moving pattern on the physical panel the same session |
+| TST-OLED-03 | Passed: per-chunk I2C write timing measured on-device, avg 2445 us / max 2529 us over 1120+ samples across a 20 s run; ~32 chunks/frame keeps full pixel transfer (~78 ms) well inside the 600 ms period and 550 ms deadline |
+| TST-OLED-04 | Passed: software-injected 5-NACK burst produced exactly 1 bounded recovery (3-strikes threshold) then resumed with `failures` frozen at 5 and `completed` still incrementing on every subsequent activation -- known-position redraw confirmed. TIMEOUT and a physically stuck bus were not exercised (no bench setup for an electrical fault this session); NACK is the only fault type covered so far |
+| TST-OLED-05 | Passed: init pointed at an unpopulated address on the real bus NACKed deterministically (`hw364a_oled_init result=2 native=-1`), printed `{"display":"onboardOled","health":"DEGRADED"}`, and produced zero further output over a 10 s window -- no boot loop, no false ready/frame report |
+| TST-OLED-06 | Passed (host-only): existing packing/failure/recovery coverage plus a new two-instance case in `test/host/test_ssd1306.c` proving independent sequence/health/failure counters when one instance fails and the other does not |
+| TST-OLED-07 | Passed: `esp_get_free_heap_size()` held constant (112620 B) across 1120+ chunk transfers and 39+ activations -- no drift, so the per-chunk `i2c_cmd_link_create`/`_delete` alloc/free pair (a real heap churn point, not "no allocation") is not leaking; task stack high-water mark 1260/2048 words. Task creation itself is a one-time heap allocation at boot (this SDK build has `configSUPPORT_STATIC_ALLOCATION` disabled), distinct from steady-state churn |
+| TST-OLED-08 | Partial: a direct-to-task notification startup gate, TWDT subscribe-after-gate, feed-once-per-activation, and the skip/deadline model are implemented and verified live (an injected slow activation raised a deadline fault while the 15 s TWDT stayed silent, and the following activation correctly re-anchored/skipped). The 5-resets-in-300s SAFE_HALT path is implemented but **not verified**: `RTC_DATA_ATTR` reset to 0 on every one of 10 consecutive resets tested (5 external RTS-pin pulses, 5 software `esp_restart()` calls), so the counter never accumulated past 1. This SDK also has no per-task TWDT add/delete API (unlike ESP32), so "unsubscribe in SAFE_HALT" has no direct equivalent here -- open point, not yet resolved |
 
 Wrong-address fault injection can test NACK without disconnecting a soldered
-panel. Electrical fault injection needs a suitable bench setup; record which
-cases were simulated and which were physical. A visible baseline from the
-upstream Arduino sketches is useful for wiring diagnosis but is not TST-OLED-02.
+panel. Electrical fault injection (TIMEOUT, stuck bus) needs a suitable bench
+setup that this session did not have; record which cases were simulated and
+which were physical. A visible baseline from the upstream Arduino sketches is
+useful for wiring diagnosis but is not TST-OLED-02.
 
 ## Luna Code implementation sequence
 

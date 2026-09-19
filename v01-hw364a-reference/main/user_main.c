@@ -2,8 +2,11 @@
 
 #include "driver/gpio.h"
 #include "driver/i2c.h"
+#include "esp_attr.h"
 #include "esp_err.h"
+#include "esp_system.h"
 #include "esp_task_wdt.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "rom/ets_sys.h"
@@ -12,12 +15,101 @@
 #include "Mcal_I2c.h"
 #include "ssd1306_frame.h"
 
+/* This SDK's build also defines -DESP_PLATFORM (see make/project.mk), so the
+ * shared v01-reference Os component's ESP32-only per-task TWDT block
+ * (esp_task_wdt_add/delete, absent from this SDK) would try to compile here
+ * too. Rather than touch a component the ESP32 reference also depends on
+ * under time pressure, this reference duplicates just the small, portable,
+ * already host-tested release/deadline state machine locally. Semantics
+ * match Os_Wrapper.h's Os_ReleaseStateType exactly; fixing the ESP_PLATFORM
+ * collision so both targets can share one file is follow-up work. */
+typedef struct {
+    int64_t expectedTick;
+    int64_t periodTicks;
+    int64_t jitterToleranceTicks;
+    uint32_t skippedActivations;
+    uint32_t lateActivations;
+    uint32_t deadlineMisses;
+} Hw364a_ReleaseStateType;
+
+static void Hw364a_ReleaseInit(Hw364a_ReleaseStateType *state, int64_t firstBoundary)
+{
+    *state = (Hw364a_ReleaseStateType){.expectedTick = firstBoundary};
+}
+
+static void Hw364a_ReleaseConfigure(Hw364a_ReleaseStateType *state,
+                                    int64_t periodTicks, int64_t jitterToleranceTicks)
+{
+    state->periodTicks = periodTicks;
+    state->jitterToleranceTicks = jitterToleranceTicks;
+}
+
+static int Hw364a_ReleaseSkip(Hw364a_ReleaseStateType *state, int64_t actualTick,
+                              int64_t periodTicks)
+{
+    if (actualTick <= state->expectedTick || periodTicks <= 0) {
+        return 0;
+    }
+    state->expectedTick = ((actualTick / periodTicks) + 1) * periodTicks;
+    state->skippedActivations++;
+    return 1;
+}
+
+static int Hw364a_ReleaseRecordWake(Hw364a_ReleaseStateType *state, int64_t actualTick)
+{
+    if (state->periodTicks <= 0) {
+        return 0;
+    }
+    if (actualTick > state->expectedTick + state->jitterToleranceTicks) {
+        state->lateActivations++;
+        return 1;
+    }
+    state->expectedTick += state->periodTicks;
+    return 0;
+}
+
+static int Hw364a_DeadlineCheck(Hw364a_ReleaseStateType *state, int64_t completionTick,
+                                int64_t deadlineTick)
+{
+    if (completionTick <= deadlineTick) {
+        return 0;
+    }
+    state->deadlineMisses++;
+    return 1;
+}
+
 #define HW364A_SDA_GPIO 14
 #define HW364A_SCL_GPIO 12
 #define HW364A_I2C_PORT I2C_NUM_0
 #define HW364A_OLED_ADDRESS 0x3CU
+#define HW364A_TASK_PERIOD_MS 600U
+#define HW364A_TASK_DEADLINE_MS 550U
+#define HW364A_TASK_JITTER_MS 50U
+#define HW364A_GOOD_FRAMES_TO_CLEAR 5U
+#define HW364A_MAX_BOOT_RESETS 5U
+/* SSD1306 pixel-data control byte, matching ssd1306_frame.c's
+ * SSD1306_CONTROL_DATA; used to isolate per-chunk transfer timing (TST-OLED-03)
+ * from the one-shot command burst issued during Ssd1306_Initialize. */
+#define HW364A_SSD1306_CONTROL_DATA 0x40U
+
+#ifdef HW364A_INJECT_INIT_FAILURE
+/* TST-OLED-05: no device answers this address on the HW-364A bus, so init
+ * deterministically NACKs without touching the soldered panel. */
+#define HW364A_INIT_ADDRESS 0x10U
+#else
+#define HW364A_INIT_ADDRESS HW364A_OLED_ADDRESS
+#endif
 
 static esp_err_t last_i2c_error;
+static uint32_t s_chunkCount;
+static int64_t s_chunkTimeTotalUs;
+static int64_t s_chunkTimeMaxUs;
+static uint32_t s_injectFailuresRemaining;
+
+static Ssd1306_InstanceType s_display;
+static DisplayDemo_CtxType s_demo;
+static Mcal_I2cHandleType s_i2c;
+static TaskHandle_t s_displayTaskHandle;
 
 static Mcal_ResultType map_error(esp_err_t error)
 {
@@ -64,7 +156,26 @@ static Mcal_ResultType write_register(void *context, uint8_t address,
     if (handle == 0 || !handle->initialized || data == 0 || length == 0U) {
         return MCAL_INVALID_ARG;
     }
-    return transfer(handle, address, reg, data, length);
+    const int64_t startUs = esp_timer_get_time();
+    Mcal_ResultType result;
+    if (s_injectFailuresRemaining > 0U) {
+        /* TST-OLED-04: software-injected NACK burst, no electrical fault
+         * needed. Distinct from a real bus fault, and recorded as such. */
+        s_injectFailuresRemaining--;
+        last_i2c_error = ESP_FAIL;
+        result = MCAL_NACK;
+    } else {
+        result = transfer(handle, address, reg, data, length);
+    }
+    const int64_t elapsedUs = esp_timer_get_time() - startUs;
+    if (reg == HW364A_SSD1306_CONTROL_DATA) {
+        s_chunkCount++;
+        s_chunkTimeTotalUs += elapsedUs;
+        if (elapsedUs > s_chunkTimeMaxUs) {
+            s_chunkTimeMaxUs = elapsedUs;
+        }
+    }
+    return result;
 }
 
 static Mcal_ResultType recover(void *context)
@@ -115,6 +226,19 @@ Mcal_ResultType Mcal_I2c_Init(Mcal_I2cHandleType *handle,
     if (error != ESP_OK) {
         return map_error(error);
     }
+    /* ESP8266 RTOS SDK v3.4's I2C driver NACKs the first transaction after
+     * i2c_param_config regardless of target address; every transaction after
+     * that succeeds. Absorb the one-time failure here so callers never see
+     * it. Verified across 6 consecutive resets on HW-364A hardware. */
+    i2c_cmd_handle_t warmup = i2c_cmd_link_create();
+    if (warmup != 0) {
+        i2c_master_start(warmup);
+        i2c_master_write_byte(warmup, (0x00U << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_stop(warmup);
+        (void)i2c_master_cmd_begin((i2c_port_t)config->port, warmup,
+                                   50U / portTICK_PERIOD_MS);
+        i2c_cmd_link_delete(warmup);
+    }
     *handle = (Mcal_I2cHandleType){
         .port = config->port, .timeoutMs = config->timeoutMs,
         .sdaPin = config->sdaPin, .sclPin = config->sclPin,
@@ -134,59 +258,175 @@ Mcal_I2cInterfaceType Mcal_I2c_GetInterface(Mcal_I2cHandleType *handle)
 
 static void print_status(const Ssd1306_InstanceType *display)
 {
-    printf("{\"display\":\"onboardOled\",\"health\":%u,\"completed\":%u,\"failures\":%u}\n",
+    printf("{\"display\":\"onboardOled\",\"health\":%u,\"completed\":%u,\"failures\":%u,\"recoveries\":%u}\n",
            (unsigned)display->health, (unsigned)display->lastCompletedSequence,
-           (unsigned)display->transferFailures);
+           (unsigned)display->transferFailures,
+           (unsigned)display->recoveryCount);
+}
+
+/* Direct-to-task notification startup gate (PROJECT_DEFINITION §11): the
+ * display task blocks immediately on creation and only proceeds once
+ * app_main has finished bus/panel init and releases it. TWDT subscription
+ * happens after the gate opens, and is fed exactly once per activation. This
+ * SDK has no per-task TWDT add/delete like ESP32's; esp_task_wdt_init() is a
+ * single global subscribe with no unsubscribe API, so SAFE_HALT here relies
+ * on never reaching the periodic loop again rather than an explicit
+ * unsubscribe call. */
+static void display_task(void *argument)
+{
+    uint32_t *bootLoopCounter = argument;
+    (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    (void)esp_task_wdt_init();
+
+    const TickType_t periodTicks = pdMS_TO_TICKS(HW364A_TASK_PERIOD_MS);
+    TickType_t lastWake = xTaskGetTickCount();
+    Hw364a_ReleaseStateType release;
+    Hw364a_ReleaseInit(&release, (int64_t)lastWake + periodTicks);
+    Hw364a_ReleaseConfigure(&release, periodTicks, pdMS_TO_TICKS(HW364A_TASK_JITTER_MS));
+
+    uint32_t activation = 0U;
+    uint32_t goodFrames = 0U;
+    for (;;) {
+        vTaskDelayUntil(&lastWake, periodTicks);
+        const TickType_t actualWake = xTaskGetTickCount();
+        activation++;
+        if (Hw364a_ReleaseSkip(&release, actualWake, periodTicks)) {
+            printf("{\"rtf\":\"RTF-003-SKIP\",\"activation\":%u,\"skipped\":%u}\n",
+                   activation, (unsigned)release.skippedActivations);
+            esp_task_wdt_reset();
+            continue;
+        }
+        if (Hw364a_ReleaseRecordWake(&release, actualWake)) {
+            printf("{\"rtf\":\"RTF-LATE\",\"activation\":%u,\"late\":%u}\n",
+                   activation, (unsigned)release.lateActivations);
+        }
+
+        const int64_t startUs = esp_timer_get_time();
+        DisplayDemo_Run(&s_demo);
+        const Rte_MonochromeFrameType *frame = DisplayDemo_GetFrame(&s_demo);
+        const Ssd1306_FrameViewType view = {
+            .width = frame->width, .height = frame->height,
+            .sequence = frame->sequence, .pixels = frame->pixels,
+            .pixelBytes = RTE_MONOCHROME_FRAME_BYTES
+        };
+        if (Ssd1306_SubmitFrame(&s_display, &view) != MCAL_OK) {
+            print_status(&s_display);
+        }
+        while (s_display.activeValid) {
+            (void)Ssd1306_TransferChunk(&s_display);
+        }
+
+#ifdef HW364A_INJECT_SLOW_ACTIVATION
+        /* TST-OLED-08: one deliberately slow activation, above the 550 ms
+         * software deadline but far below the 15 s TWDT timeout, so the
+         * fault is observable while the watchdog stays silent. The overrun
+         * also pushes the next vTaskDelayUntil() boundary into the past,
+         * which is what exercises the skip/re-anchor path above. */
+        if (activation == 6U) {
+            vTaskDelay(pdMS_TO_TICKS(1300U));
+        }
+#endif
+
+        const int64_t elapsedUs = esp_timer_get_time() - startUs;
+        if (Hw364a_DeadlineCheck(&release, elapsedUs,
+                             (int64_t)HW364A_TASK_DEADLINE_MS * 1000)) {
+            /* CONFIG_NEWLIB_NANO_FORMAT drops %lld; elapsedUs fits in 32 bits
+             * for any activation on this reference (worst case ~1.3e6 us). */
+            printf("{\"rtf\":\"RTF-002-DEADLINE\",\"activation\":%u,\"elapsedUs\":%ld}\n",
+                   activation, (long)elapsedUs);
+        }
+        /* Exactly one feed for each completed activation. */
+        esp_task_wdt_reset();
+
+        print_status(&s_display);
+        if (s_display.health == SSD1306_HEALTH_READY) {
+            goodFrames++;
+            if (bootLoopCounter != 0 && goodFrames >= HW364A_GOOD_FRAMES_TO_CLEAR) {
+                *bootLoopCounter = 0U;
+                goodFrames = 0U;
+            }
+        } else {
+            goodFrames = 0U;
+        }
+
+#ifdef HW364A_INJECT_AUTO_RESET
+        /* TST-OLED-08 boot-loop path: force a software reset well before
+         * goodFrames could clear the counter, repeatedly, with no external
+         * pin toggle involved -- this is the actual scenario RTC_DATA_ATTR
+         * is meant to survive (soft reset / esp_restart), unlike an external
+         * RST-pin pulse. */
+        if (activation == 2U) {
+            printf("{\"fault_inject\":\"AUTO_RESET\",\"bootLoopCounter\":%u}\n",
+                   (unsigned)*bootLoopCounter);
+            esp_restart();
+        }
+#endif
+
+#ifdef HW364A_INJECT_FAILURE_BURST
+        if (activation == 3U) {
+            s_injectFailuresRemaining = 5U;
+            puts("{\"fault_inject\":\"NACK_BURST_START\",\"count\":5}");
+        }
+#endif
+
+        if (s_chunkCount > 0U && (activation % 5U) == 0U) {
+            printf("{\"chunk_us_avg\":%ld,\"chunk_us_max\":%ld,\"chunks_total\":%u,"
+                   "\"heap_free\":%u,\"stack_hwm_words\":%u}\n",
+                   (long)(s_chunkTimeTotalUs / (int64_t)s_chunkCount),
+                   (long)s_chunkTimeMaxUs, (unsigned)s_chunkCount,
+                   (unsigned)esp_get_free_heap_size(),
+                   (unsigned)uxTaskGetStackHighWaterMark(NULL));
+        }
+    }
 }
 
 void app_main(void)
 {
-    static Mcal_I2cHandleType i2c;
-    static Ssd1306_InstanceType display;
-    static DisplayDemo_CtxType demo;
+    static RTC_DATA_ATTR uint32_t bootLoopCounter;
+
+    if (bootLoopCounter >= HW364A_MAX_BOOT_RESETS) {
+        printf("{\"system\":\"SAFE_HALT\",\"reason\":\"BOOT_LOOP\",\"resets\":%u,\"resetReason\":%d}\n",
+               (unsigned)bootLoopCounter, (int)esp_reset_reason());
+        return;
+    }
+    bootLoopCounter++;
+    printf("{\"boot\":\"start\",\"bootLoopCounter\":%u,\"resetReason\":%d}\n",
+           (unsigned)bootLoopCounter, (int)esp_reset_reason());
+
+    /* This SDK build has configSUPPORT_STATIC_ALLOCATION disabled, so task
+     * creation here is a one-time heap allocation at boot -- not the
+     * steady-state control-path churn REQ-RUN-003 targets, which the
+     * TST-OLED-07 heap trace below covers separately. */
+    if (xTaskCreate(display_task, "display", 2048, &bootLoopCounter, 5,
+                    &s_displayTaskHandle) != pdPASS) {
+        puts("{\"system\":\"SAFE_HALT\",\"reason\":\"TASK_INIT\"}");
+        return;
+    }
+
     const Mcal_I2cConfigType config = {
         .port = HW364A_I2C_PORT, .sdaPin = HW364A_SDA_GPIO,
         .sclPin = HW364A_SCL_GPIO, .frequencyHz = 100000U,
         .timeoutMs = 1000U, .pullups = 1U
     };
-    const Mcal_ResultType i2cResult = Mcal_I2c_Init(&i2c, &config);
+    const Mcal_ResultType i2cResult = Mcal_I2c_Init(&s_i2c, &config);
     printf("hw364a_i2c_init result=%u\n", (unsigned)i2cResult);
     if (i2cResult != MCAL_OK) {
         puts("{\"system\":\"SAFE_HALT\",\"reason\":\"I2C_INIT\"}");
         return;
     }
     vTaskDelay(100U / portTICK_PERIOD_MS);
-    Ssd1306_InstanceInit(&display, HW364A_OLED_ADDRESS,
-                         Mcal_I2c_GetInterface(&i2c));
-    const Mcal_ResultType displayResult = Ssd1306_Initialize(&display);
+    Ssd1306_InstanceInit(&s_display, HW364A_INIT_ADDRESS,
+                         Mcal_I2c_GetInterface(&s_i2c));
+    const Mcal_ResultType displayResult = Ssd1306_Initialize(&s_display);
     printf("hw364a_oled_init result=%u native=%d\n", (unsigned)displayResult,
            (int)last_i2c_error);
     if (displayResult != MCAL_OK) {
         puts("{\"display\":\"onboardOled\",\"health\":\"DEGRADED\"}");
+        /* No boot-loop counter clear, no task release: the display task
+         * stays parked on its notification forever, so no frame/ready
+         * report is ever emitted for a failed init. */
         return;
     }
-    DisplayDemo_Init(&demo);
-    for (;;) {
-        DisplayDemo_Run(&demo);
-        const Rte_MonochromeFrameType *frame = DisplayDemo_GetFrame(&demo);
-        const Ssd1306_FrameViewType view = {
-            .width = frame->width, .height = frame->height,
-            .sequence = frame->sequence, .pixels = frame->pixels,
-            .pixelBytes = RTE_MONOCHROME_FRAME_BYTES
-        };
-        if (Ssd1306_SubmitFrame(&display, &view) != MCAL_OK) {
-            puts("{\"display\":\"onboardOled\",\"health\":\"DEGRADED\"}");
-            return;
-        }
-        while (display.activeValid) {
-            if (Ssd1306_TransferChunk(&display) != MCAL_OK) {
-                print_status(&display);
-                return;
-            }
-            esp_task_wdt_reset();
-            vTaskDelay(1U / portTICK_PERIOD_MS);
-        }
-        print_status(&display);
-        vTaskDelay(500U / portTICK_PERIOD_MS);
-    }
+    DisplayDemo_Init(&s_demo);
+    xTaskNotifyGive(s_displayTaskHandle);
 }

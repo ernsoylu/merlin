@@ -12,9 +12,9 @@ deliverables exist — it is done when its **gate** holds.
 | Phase | Name | Gate | Status |
 |-------|------|------|--------|
 | 0 | Repository skeleton & toolchain | `check-env` green on a clean machine | **complete** |
-| 0E | ESP8266 backend qualification | generic ECU SDK/compiler pinned; build and runtime feasibility recorded | **baseline qualified; acceptance measurements pending** |
+| 0E | ESP8266 backend qualification | generic ECU SDK/compiler pinned; build and runtime feasibility recorded | **complete; full behavioral/watchdog qualification is Phase 2** |
 | 1 | v0.1 reference firmware | complete HW-394 and HW-364A paths; host/layering tests; ESP32 QEMU and ESP8266 hardware boot | **complete; Phase 2 hardware acceptance pending** |
-| 2 | Hardware validation & measurement | §8.3 and OLED acceptance pass per ECU, numbers recorded | **boot smoke only; acceptance pending** |
+| 2 | Hardware validation & measurement | §8.3 and OLED acceptance pass per ECU, numbers recorded | **HW-364A: TST-OLED-02/03/04/05/06/07 passed, TST-OLED-08 partial (RTC boot-loop gap found), TST-OLED-01 partial; HW-394 §8.3 not started (board not on bench this session)** |
 | 3 | Schema freeze | measured numbers and modular ECU/board/driver model; §4 schema 2.2.0 frozen | **not started** |
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **not started** |
 | 5 | Generator MVP | fixtures #0/#1 regenerate byte-identical; generic ESP8266 and board-default selection work | **not started** |
@@ -30,10 +30,29 @@ verified 4 MB flash writes. The HW-394 image currently uses deterministic fake
 sensors by default, so external BME280 wiring and measured control behavior
 remain open. The native ESP8266 RTOS SDK v3.4 HW-364A reference now builds,
 hash-verifies its flash writes, boots the identified ESP8266EX/2 MB unit, and
-repeatedly transfers frames to the OLED at GPIO14/GPIO12, address 0x3C. Host,
-layering, and both reference-path checks are complete; timing, fault-injection,
-visible-pattern, and watchdog acceptance remain Phase 2 work. See
-[measurements](docs/measurements.md).
+repeatedly transfers frames to the OLED at GPIO14/GPIO12, address 0x3C. A
+2026-09-19 re-run of the unmodified reference found the OLED init NACKing on
+every reset (root cause: ESP8266 RTOS SDK v3.4 NACKs the first I2C transaction
+after `i2c_param_config`, independent of target address); a fix landed in the
+shared `Mcal_I2c_Init` and was re-verified across 6/6 resets plus a 30 s
+sustained run, and the owner visually confirmed a correct moving pattern on
+the physical panel, passing TST-OLED-02. Host, layering, and both
+reference-path checks are complete. A same-day follow-up added a real startup
+gate, per-activation skip/deadline detection, TWDT feed-once-per-activation,
+and software fault injection to `v01-hw364a-reference`, then verified
+TST-OLED-03 (per-chunk I2C timing, avg 2445us/max 2529us), TST-OLED-04
+(5-NACK burst -> 1 bounded recovery -> correct resumed redraw), TST-OLED-05
+(forced init failure -> DEGRADED, no boot loop), TST-OLED-06 (new host-only
+two-instance independence test), and TST-OLED-07 (heap/stack held flat across
+1120+ transfers) on the physically connected unit. TST-OLED-08 is partial:
+skip/deadline/watchdog-silence verified live, but the 5-resets-in-300s
+SAFE_HALT path is unverified -- `RTC_DATA_ATTR` did not survive any of 10
+consecutive reset trials (5 external, 5 software `esp_restart()`), so the
+boot-loop counter never accumulates past 1 on this SDK/hardware combination.
+TST-OLED-01's pull-up/electrical record and TIMEOUT/stuck-bus fault injection
+still need bench instrumentation this session didn't have. HW-394's full §8.3
+scenario suite was not attempted this session (that board was not connected).
+See [measurements](docs/measurements.md).
 
 **Owner expansion:** generic ESP8266 is a second ECU target; HW-364A is its board
 profile; SSD1306 is a reusable driver selected automatically by that board with

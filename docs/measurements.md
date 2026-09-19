@@ -57,14 +57,145 @@ budgets, electrical pull-up values, sensor support, or watchdog/SAFE_HALT
 qualification; those remain Phase 2 acceptance work. See
 [board evidence](ecu-support.md#board-evidence).
 
+### 2026-09-19 re-run: first-transaction NACK found and fixed
+
+Re-flashing the unmodified `4d7753d` image onto the same physically-connected
+HW-364A unit reproduced `hw364a_oled_init result=2 native=-1` (NACK) on 5/5
+cold and soft resets — the previously recorded "zero failures" result above
+was not reproducible as committed. An I2C bus scan (address 0x01–0x77, added
+temporarily and reverted) showed the panel ACKing normally at `0x3C`, ruling
+out a wiring fault. Isolating further: a single throwaway zero-length
+transaction issued immediately after `i2c_param_config`, and discarded,
+reliably absorbs a first-transaction NACK that ESP8266 RTOS SDK v3.4's I2C
+driver produces on this hardware regardless of target address; every
+transaction issued after that warm-up write succeeds. The fix was applied
+inside `Mcal_I2c_Init` in `v01-hw364a-reference/main/user_main.c` (the shared
+MCAL entry point, not the OLED-specific caller, so a future BME280 addition on
+this ECU does not re-hit the same bug) and re-verified: 6/6 consecutive soft
+resets produced `hw364a_oled_init result=0 native=0`, then a 30 s sustained
+run at 74880 baud recorded 52 completed frames, `health:1` throughout, and
+`failures:0` — no other host tests regressed. Average full display-frame
+cycle time over that run was `29.013 s / 51 intervals ≈ 569 ms` (host serial
+timestamps, single run, N=52); against the fixed 500 ms post-transfer delay in
+`user_main.c`, that puts full-frame transfer (init + chunked pixel writes) at
+roughly 69 ms. This is a coarse, host-side average, not a per-chunk WCET —
+TST-OLED-03 still needs on-device, per-chunk instrumentation before its
+number is trustworthy for a timeout budget. The owner visually confirmed a
+correct, moving demo pattern on the physical panel during this run, closing
+the remaining visible-pattern gap in TST-OLED-02.
+
+### 2026-09-19 follow-up: fault injection, timing, and boot-loop evidence
+
+Same physically-connected HW-364A unit (MAC `ec:64:c9:df:16:7e`), same pinned
+SDK. `v01-hw364a-reference/main/user_main.c` gained: a direct-to-task
+notification startup gate (display task blocks on `ulTaskNotifyTake` until
+`app_main` finishes bus/panel init and releases it); a per-activation
+skip/deadline state machine ported from `Os_Wrapper.h`'s already host-tested
+release-state logic (duplicated locally rather than linking the shared `Os`
+component, because this SDK's build also defines `-DESP_PLATFORM`, which would
+have pulled in the ESP32-only per-task TWDT block and failed to compile --
+noted as follow-up cleanup, not fixed this session); `esp_task_wdt_init()`
+called once after the gate opens and `esp_task_wdt_reset()` called exactly
+once per activation (previously it was fed once per I2C chunk); an
+`RTC_DATA_ATTR` boot-loop counter checked/incremented in `app_main`; per-chunk
+I2C timing via `esp_timer_get_time()` around every `write_register` call
+carrying the SSD1306 data control byte; and three independent compile-time
+fault-injection paths (`HW364A_INJECT_FAILURE_BURST`,
+`HW364A_INJECT_SLOW_ACTIVATION`, `HW364A_INJECT_INIT_FAILURE`,
+`HW364A_INJECT_AUTO_RESET`) so faults could be produced deterministically on
+real hardware without disconnecting the panel or reaching for bench
+instrumentation this session didn't have. `test/host/test_ssd1306.c` gained a
+two-instance case proving independent state (TST-OLED-06). Full host suite
+(`./test/run_tests.sh`) passed throughout, including the new case.
+
+**Per-chunk timing (TST-OLED-03).** Clean run (no injected faults), 20 s
+capture, N=39 activations / 1120+ chunk writes: `chunk_us_avg=2445`,
+`chunk_us_max=2529` (microseconds per 32-byte I2C data chunk), stable across
+the whole run with no drift. 32 chunks/frame x ~2.445 ms ≈ 78 ms of I2C time
+per full frame, comfortably inside the 600 ms activation period and 550 ms
+software deadline used for this test. This is on-device instrumentation, not
+an external bus analyzer trace.
+
+**Fault injection, bounded recovery, known-position redraw (TST-OLED-04).**
+Build with `HW364A_INJECT_FAILURE_BURST` forced exactly 5 consecutive
+synthetic NACKs starting mid-run (software fault injection at the
+`write_register` boundary, not an electrical fault). Observed: `failures`
+climbed to 5 and then stayed at 5 for the rest of a 25 s capture; `recoveries`
+reached 1 and stayed there (matches the driver's 3-consecutive-failure
+threshold plus a 10-activation cooldown in `ssd1306_frame.c`, unmodified this
+session); `completed` kept incrementing normally on every activation after
+recovery, i.e. the display resumed transferring subsequent frames from a
+correct position with no further failures. TIMEOUT and a real stuck-bus fault
+were **not** exercised -- both need bench-level electrical fault injection
+this session didn't have.
+
+**Init failure -> DEGRADED, no boot loop (TST-OLED-05).** Build with
+`HW364A_INJECT_INIT_FAILURE` points the OLED init at address `0x10`, which
+nothing on the HW-364A bus answers. Observed on real hardware:
+`hw364a_oled_init result=2 native=-1` (MCAL_NACK / ESP_FAIL) followed by
+`{"display":"onboardOled","health":"DEGRADED"}`, then zero further serial
+output over a 10 s window -- confirms no boot loop, no false ready/frame
+report, matching the requirement exactly.
+
+**Steady-state heap/stack (TST-OLED-07).** `esp_get_free_heap_size()` printed
+every 5 activations across the 20 s clean run held constant at exactly 112620
+bytes for all six samples -- no downward drift across 1120+
+`i2c_cmd_link_create`/`i2c_cmd_link_delete` pairs (one alloc/free pair per
+chunk; this is real per-chunk heap churn, not "no allocation" -- a stable
+watermark across many iterations is evidence the pairs are balanced, not proof
+by itself, consistent with the project's own caution that a watermark alone
+proves nothing). `uxTaskGetStackHighWaterMark(NULL)` held constant at 1260
+words free out of a 2048-word stack. Task creation (`xTaskCreate`) is a
+one-time heap allocation at boot, not steady-state churn: this SDK build has
+`configSUPPORT_STATIC_ALLOCATION` unset (`xTaskCreateStatic` is not even
+declared), so `Os_CreateStaticTask`'s pattern from the ESP32 reference could
+not be reused as-is.
+
+**Skip/deadline/watchdog (TST-OLED-08, partial).** Build with
+`HW364A_INJECT_SLOW_ACTIVATION` forces one activation to sleep 1300 ms inside
+the runnable (deliberately above the 550 ms software deadline, deliberately
+far below the 15 s `CONFIG_TASK_WDT_TIMEOUT_S`). Observed on real hardware, in
+order: `{"rtf":"RTF-002-DEADLINE","activation":6,...}` fired for the slow
+activation; the *next* activation logged
+`{"rtf":"RTF-003-SKIP","activation":7,"skipped":1}` because the overrun pushed
+`vTaskDelayUntil`'s target past the next boundary, exactly the re-anchor path
+`Os_ReleaseSkip` implements; the board kept running normally afterward with no
+watchdog reset (TWDT stayed silent throughout, confirming L1 fault reporting
+is decoupled from the L2 hardware watchdog as designed). **Boot-loop/SAFE_HALT
+is implemented but unverified**: ten consecutive reset trials (5 external
+RTS-pin pulses via direct pyserial DTR/RTS control, mimicking esptool's own
+reset sequence; 5 software `esp_restart()` calls via
+`HW364A_INJECT_AUTO_RESET`, added specifically to rule out "wrong reset type"
+as the explanation) all printed `{"boot":"start","bootLoopCounter":1,...}` --
+the RTC-memory-backed counter never reached 2, let alone 5, so the 5-resets-
+in-300s SAFE_HALT branch was never reached on real hardware. This is a real,
+reproduced finding, not a test artifact: `RTC_DATA_ATTR` does not persist
+resets on this ESP8266 RTOS SDK v3.4 / ESP8266EX combination the way it does
+on the ESP32 reference. Root cause not yet investigated (candidates: SDK
+version/config difference in how `.rtc.data` is mapped or preserved across
+`esp_restart()` on this port, versus ESP32's IDF 5.2.3). Separately, this SDK
+exposes no per-task TWDT add/delete API at all (only a single global
+`esp_task_wdt_init()`/`esp_task_wdt_reset()`), so "unsubscribe from the TWDT
+in SAFE_HALT" -- straightforward on the ESP32 reference via
+`esp_task_wdt_delete(NULL)` -- has no direct equivalent here and needs its own
+design decision before TST-OLED-08 can be called passed.
+
+**Not attempted this session:** TST-OLED-01's pull-up/electrical measurement
+(needs a multimeter at the bench); TIMEOUT and stuck-bus fault injection
+(needs bench-level electrical fault capability); HW-394/ESP32 §8.3 scenarios
+and the HW-394 board-manifest population from §12.1 (a different, physically
+disconnected board this session). The board was left flashed with the clean,
+non-injection build and re-verified running normally (`health:1`, `failures:0`)
+before ending the session.
+
 | Qualification | State |
 |---|---|
 | Generic ESP8266 SDK/compiler/environment pin | Baseline verified: SDK v3.4 exact commit / GCC 8.4.0 |
 | Generic ESP8266 device-driver combinations (SSD1306, BME280) | SSD1306 HW-364A baseline only; BME280 not qualified |
 | HW-364A physical identity/module/flash/wiring/pull-ups/reset | ESP8266EX, 2 MB, GPIO14/12 and 0x3C verified; pull-ups/electrical record pending |
 | HW-364A default OLED instance and pin/address reservation behavior | Hand-built reference verified; schema/generator tests remain later |
-| TST-OLED-01…08 | TST-OLED-01 partial; TST-OLED-02 serial-transfer portion partial; TST-OLED-03…08 pending |
-| ESP8266 watchdog/startup/skip/deadline/SAFE_HALT qualification | Startup and repeated transfer baseline verified; full supervision acceptance pending |
+| TST-OLED-01…08 | TST-OLED-01 partial; TST-OLED-02 passed; TST-OLED-03/04/05/06/07 passed (2026-09-19 follow-up); TST-OLED-08 partial (skip/deadline/watchdog-silence verified, boot-loop/SAFE_HALT unverified -- RTC persistence gap found) |
+| ESP8266 watchdog/startup/skip/deadline/SAFE_HALT qualification | Startup gate, skip re-anchor, deadline detection and TWDT-silence verified live (2026-09-19); SAFE_HALT boot-loop path implemented but not reachable on real hardware pending the RTC persistence fix; no per-task TWDT unsubscribe API on this SDK |
 | ESP32 SSD1306 with an external panel | Host-compatible path only; not run |
 
 ## Required measurement record
@@ -79,13 +210,13 @@ who confirmed visible OLED behavior. Identify omitted scenarios explicitly.
 | Measurement | HW-394/ESP32 | HW-364A/ESP8266 |
 |---|---|---|
 | Critical-section copy duration | Pending | Pending, including frame publication |
-| Bus transaction/state duration and fault timeout | Pending | Pending, commands and display chunks separately |
-| Release jitter distribution | Pending, T10 ≥10⁶ activations | Pending at selected/recorded task periods |
-| Recovery duration and cooldown behavior | Pending | Pending |
+| Bus transaction/state duration and fault timeout | Pending | Pixel-chunk writes measured: avg 2445 us / max 2529 us, N=1120+ (2026-09-19). Command-burst (init) and TIMEOUT/stuck-bus cases not separately measured |
+| Release jitter distribution | Pending, T10 ≥10⁶ activations | Not measured as a distribution; one injected 1300 ms overrun exercised the skip/deadline/re-anchor path once (2026-09-19), not a jitter distribution over many samples |
+| Recovery duration and cooldown behavior | Pending | Qualitative pass: 5 injected NACKs -> 1 bounded recovery, cooldown held, resumed correctly (2026-09-19). Recovery *duration* in us not timed |
 | Execution under simultaneous bus fault and logging | Pending | Pending, with ongoing display refresh |
-| Steady-state allocate/free trace | Pending | Pending |
-| Static RAM / task stack usage | Pending | Pending, account for every frame buffer |
-| OLED full-frame latency / visual output | Not applicable to climate-only reference | Pending; serial transfer works, visual confirmation not recorded |
+| Steady-state allocate/free trace | Pending | `esp_get_free_heap_size()` flat at 112620 B over 1120+ chunk alloc/free pairs, N=6 samples/20s (2026-09-19); no leak observed, not an allocator-level trace |
+| Static RAM / task stack usage | Pending | Task stack high-water mark 1260/2048 words, stable (2026-09-19). Frame buffers (`active`/`pending`, 1024 B each) are struct fields, not separately traced |
+| OLED full-frame latency / visual output | Not applicable to climate-only reference | Coarse host-side average ≈569ms/frame (2026-09-19, N=52, single run); visual pattern confirmed by owner same session; per-chunk timing now measured on-device (see above), full-frame pixel time ≈78ms derived from it |
 
 No placeholder WCET, timeout, flash capacity or pull-up value in the design
 examples is a measurement. Hardware-derived manifest values and margins must
