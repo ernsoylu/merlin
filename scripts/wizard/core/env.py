@@ -36,25 +36,11 @@ def parse_version(text):
     'qemu-system-xtensa version 8.2.0 (v8.2.0-...)'. Take the first triple and
     ignore whatever the build appended.
     """
-    text = text or ""
-    for start, character in enumerate(text):
-        if not character.isdigit():
-            continue
-        parts = []
-        position = start
-        while len(parts) < 3:
-            begin = position
-            while position < len(text) and text[position].isdigit():
-                position += 1
-            if begin == position:
-                break
-            parts.append(text[begin:position])
-            if len(parts) < 3:
-                if position >= len(text) or text[position] != ".":
-                    break
-                position += 1
-        if len(parts) == 3:
-            return ".".join(parts)
+    for token in (text or "").split():
+        candidate = token.lstrip("vV").split("-", 1)[0]
+        parts = candidate.split(".")
+        if len(parts) == 3 and all(part.isdigit() for part in parts):
+            return candidate
     return None
 
 
