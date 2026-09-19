@@ -1,0 +1,10 @@
+# Generated ESP-IDF output in code/ IS committed on purpose: it makes every
+# regeneration a reviewable diff, which is the cheapest determinism check
+# available. Do not add code/ here.
+build/
+sdkconfig
+!sdkconfig.defaults
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
