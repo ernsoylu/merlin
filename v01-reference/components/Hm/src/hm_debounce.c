@@ -26,3 +26,37 @@ void Hm_DebounceStep(Hm_DebounceType *state, int failed)
         }
     }
 }
+
+void Hm_RuntimeInit(Hm_RuntimeType *state, unsigned int failedCyclesToSet,
+                    unsigned int passedCyclesToHeal)
+{
+    *state = (Hm_RuntimeType){0};
+    Hm_DebounceInit(&state->sequence, failedCyclesToSet, passedCyclesToHeal);
+}
+
+int Hm_RuntimeObserveSequence(Hm_RuntimeType *state, uint32_t sequence)
+{
+    if (!state->hasSequence) {
+        state->hasSequence = 1U;
+        state->lastSequence = sequence;
+        Hm_DebounceStep(&state->sequence, 0);
+        return 0;
+    }
+
+    const int stalled = sequence == state->lastSequence;
+    Hm_DebounceStep(&state->sequence, stalled);
+    state->lastSequence = sequence;
+    return state->sequence.active;
+}
+
+void Hm_RuntimeRecordRtf(Hm_RuntimeType *state, uint32_t rtf)
+{
+    if (rtf < 8U) {
+        state->rtfCounts[rtf]++;
+    }
+}
+
+uint32_t Hm_RuntimeRtfCount(const Hm_RuntimeType *state, uint32_t rtf)
+{
+    return rtf < 8U ? state->rtfCounts[rtf] : 0U;
+}

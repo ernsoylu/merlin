@@ -1,21 +1,23 @@
-# ESP32-WROOM Project Wizard — Project Definition
+# Merlin ECU Project Wizard — Project Definition
 
-**Document version:** 2.1.0 · **Status:** FINAL / APPROVED
-**Supersedes:** drafts 1.0.0 and 2.0.0 (never released — no migration path exists or is required)
-**Approvals on record:** native ESP-IDF CMake as primary build system (project owner, round 2); v1.0 scope = exactly the v0.1-proven runtime path, generated (lead architect, round 2).
+**Document version:** 2.2.0 · **Status:** scope amended by owner request, 2026-09-19; implementation pending
+**Supersedes:** 2.1.0 for ECU scope, target-specific contracts, and reference status. The schema examples below remain 2.1.0 drafts until the Phase 3 revision; no frozen schemas have shipped.
+**Decisions on record:** native ESP-IDF CMake for ESP32; generate only hardware-proven reference paths. Owner expansion: add generic ESP8266 as an ECU target, HW-364A as a board profile, and SSD1306 as a reusable device driver automatically selected by that board. The hand-built ESP32/host reference slice is now implemented; ESP8266 qualification remains separate.
 
 ---
 
 ## 1. Introduction
 
 ### 1.1 Purpose
-A LEGO-style project generator for ESP32-WROOM: the user composes AUTOSAR-Classic-*style* building blocks — MCAL modules, device-driver **instances**, application SWC **instances** — and the wizard generates a compilable, deterministic, supervision-capable native ESP-IDF project, repeatably and modifiably over the project lifetime.
+A LEGO-style project generator for embedded ECUs, initially ESP32-WROOM/HW-394 and generic ESP8266 with optional HW-364A board defaults: the user composes AUTOSAR-Classic-*style* building blocks — MCAL modules, device-driver **instances**, application SWC **instances** — and the wizard generates a compilable, deterministic, supervision-capable project for the selected target SDK, repeatably and modifiably over the project lifetime.
 
 ### 1.2 Scope, Conformance & Disclaimer
 This project **reuses AUTOSAR methodology and naming for structure and discipline. It is not an AUTOSAR Classic implementation and claims no conformance.** Per-module fidelity is declared explicitly in §2.2 (SWS-signature-compatible / name-inspired / no analog). Generated configuration is **link-time** configuration (compiled C); the term "post-build" is not used. The software is **not developed per ISO 26262 or IEC 61508 and carries no ASIL/SIL claim.**
 
-**In scope:** wizard CLI; JSON data models + schemas; deterministic generation; resource/pin allocation; RTE, OS, EcuM, and supervision generation; QEMU boot test model; Linux installation.
+**In scope:** wizard CLI; JSON data models + schemas; deterministic generation; resource/pin allocation; RTE, OS, EcuM, and supervision generation; ESP32 QEMU boot test model; Linux installation; two independently built ECU profiles and a local HW-364A OLED driver bench.
 **Out of scope (v1.x):** OTA, debugging UI, multi-ECU communication stacks.
+
+Multiple supported ECU types means one target, image, configuration, and lock per project. Cross-ECU RTE connections, network coordination, and synchronized clocks are not part of this expansion. Generic ESP8266 and its HW-364A board profile are in the v0.1 reference/v1.0 generator scope, conditional on their qualification gates; they are currently **planned**, not implemented or hardware-validated. [ECU support and Luna handoff](docs/ecu-support.md) defines those gates and the driver compatibility matrix.
 
 ### 1.3 Positioning & Prior Art
 - **Vs. Zephyr:** Zephyr already provides devicetree (≈ board manifests), bindings (≈ driver manifests), Kconfig (≈ module selection), *and* a task-watchdog facility. This project's differentiators are the **signal-level RTE**, **provider-agnostic port composition**, and **generated, integrated supervision** (task wrapper → Hm → EcuM as one contract). The devicetree **overlay** model is adopted for project-specific wiring (v1.1).
@@ -24,6 +26,8 @@ This project **reuses AUTOSAR methodology and naming for structure and disciplin
 
 ### 1.4 References
 R1 AUTOSAR Classic Layered Software Architecture · R2 AUTOSAR SWS: Mcu, Port, Dio, Adc, Pwm, Icu, Spi, Can, Wdg, Eth, Det, Os, EcuM, NvM, WdgM, Dem · R3 ESP-IDF v5.2.3 (FreeRTOS SMP, wdts, gpio, i2c, uart, ledc, intr_alloc, startup, build system, QEMU) · R4 FreeRTOS · R5 Bosch BME280 datasheet BST-BME280-DS002 · R6 espboards.dev/esp32/esp32-hw-394 · R7 JSON Schema Draft 2020-12.
+
+R8 [HW-364A reference repository](https://github.com/peff74/esp8266_OLED_HW-364A/tree/15867f545c6fdb063a186e069f140c4b9e17ccc6), inspected 2026-09-19; R9 [Espressif ESP8266 RTOS SDK v3.4](https://github.com/espressif/ESP8266_RTOS_SDK/releases/tag/v3.4), its [support policy](https://github.com/espressif/ESP8266_RTOS_SDK/blob/master/SUPPORT_POLICY_EN.md), [Linux setup](https://github.com/espressif/ESP8266_RTOS_SDK/blob/master/docs/en/get-started/linux-setup.rst), and its [I2C API](https://docs.espressif.com/projects/esp8266-rtos-sdk/en/latest/api-reference/peripherals/i2c.html), all inspected 2026-09-19. R8 is board/example evidence, not proof of Merlin compatibility. R9 v3.4/GCC 8.4.0 is the candidate native backend pin; exact commit/tool archive, build and runtime qualification remain required.
 
 ### 1.5 Terms
 ASW · SWC · RTE · BSW · MCAL · EcuM · Hm (Health Monitor) · Det · IoHwAb · Runnable · PortInterface (typed, provider-agnostic) · **type vs. instance** (driver/SWC types are repo components; instances are project-level entities) · sample contract · lockfile.
@@ -44,7 +48,7 @@ Component `REQUIRES` matrices (§7.3) are **defense-in-depth only** — ESP-IDF 
 
 ### 2.2 Module Catalog & AUTOSAR Fidelity
 
-**v1.0 selectable MCAL:** Mcu, Port, Dio, I2c, Spi, Uart, Adc, Pwm, Gpt, Wdg.
+**v1.0 MCAL catalog:** Mcu, Port, Dio, I2c, Spi, Uart, Adc, Pwm, Gpt, Wdg. Each module becomes selectable only for qualified ECU backends; catalog membership alone is not implementation evidence.
 **v1.0 BSW (auto-managed):** Os, EcuM, Det, Hm, Log.
 **Planned (visible, non-selectable, version-tagged):** Twai (v1.1), Icu/PCNT subset (v1.1), Eth (v1.2), Sdio (v1.2), Touch, Rmt, Mcpwm, Dac, Aes/Sha/Rsa/Rng (v1.2).
 **Never user-selectable:** Dma, Intm, Flash, ULP (implicit/advanced). **FlashEnc/eFuse:** one-way hardware operations — behind `device-security --expert` (activated v1.2), never in a peripheral checklist.
@@ -62,6 +66,17 @@ Component `REQUIRES` matrices (§7.3) are **defense-in-depth only** — ESP-IDF 
 
 **SWC/driver instance calling convention (uniform):** runnables take an instance context — `void ClimateController_Run(ClimateController_CtxType* self)`; drivers take instance handles — `void Bme280_MainFunction_High(Bme280_InstanceType inst)`. Single- and multi-instance types use the same convention.
 
+### 2.2.1 ECU support matrix
+
+| ECU / board profile | Reference workload | Backend | Current evidence |
+|---|---|---|---|
+| `esp32` / HW-394 | Two BME280s, climate controller, PWM fan | ESP-IDF 5.2.3, native CMake | Partial reference and host tests; ESP32 hardware boot smoke only |
+| `esp8266` / generic | Explicitly chosen drivers and wiring; no default OLED | ESP8266 RTOS SDK v3.4 candidate, GCC 8.4.0 | Documentation only; backend unqualified |
+| `esp8266` / HW-364A | Default SSD1306 instance; demo binds display SWC and health reporting | Same generic ESP8266 backend | Documentation and upstream examples only |
+| Future ESP32-S3/C3 | To be defined in v1.2 | Target-specific SDK profiles | Planned |
+
+The module catalog above is a capability catalog, not a promise that every ECU implements every module. The initial ESP8266 subset requires Port/Dio, I2c, Uart, time/watchdog services and Os/Rte/EcuM/Hm/Det/Log. The portable device catalog includes SSD1306 and BME280 through MCAL I2c, with hardware support claimed only after each ECU/device combination passes tests. HW-364A uses that same catalog and adds an SSD1306 instance by default. PWM, ESP32 LEDC/RMT/ADC2, and multi-core APIs are not inherited by ESP8266. Unsupported selections fail validation (VAL-026). HW-364B is mentioned upstream but is not a separately qualified Merlin target.
+
 ### 2.3 Composition Model
 
 | Concept | Example |
@@ -75,6 +90,10 @@ Component `REQUIRES` matrices (§7.3) are **defense-in-depth only** — ESP-IDF 
 
 Actuator/IO access is unified into the same model: the wizard generates an **IoHwAb** component whose instances implement hardware interfaces (`PwmDutyCycle`, `DioLevel`). There is exactly **one** wiring mechanism — ports.
 **Fan-in/fan-out:** one provider port may feed multiple consumers (each gets its own implicit snapshot); one requirer port may be fed by exactly one provider (multiple providers → generation error).
+
+The HW-364A composition is `DisplayDemo.DisplayOut → onboardOled.Frame`, with `onboardOled.Health → Hm`. The display SWC uses a provider-agnostic `MonochromeFrame` port; only `Drv_Ssd1306` knows OLED commands and only MCAL knows bus pins/SDK calls. Rendering and packing are host-testable; initialization and bounded frame transfer are target-tested. The exact frame and health contracts are specified in [the ECU support document](docs/ecu-support.md#oled-runtime-contract).
+
+Board selection adds hardware instances and reserves their physical resources; application/demo selection supplies SWCs and bindings. HW-364A automatically adds exactly one `ssd1306` instance and its I2C dependency/reservations. Generic ESP8266 adds no devices automatically. The same SSD1306 driver can serve an explicitly wired external panel on either ECU. Disabling a board device's software does not free pins/address still occupied by soldered hardware.
 
 ### 2.4 EcuM
 Generated state machine: **STARTUP → RUN ⇄ DEGRADED → SHUTDOWN / SAFE_HALT**. EcuM owns initialization sequencing, startup error handling, degraded-mode policy, controlled reset, and shutdown. Each device manifest declares `initPolicy.onFailure ∈ {degradable, inhibit, abort}`; EcuM applies it to dependents (components whose required ports bind to the failed device). EcuM executes as a scheduled runnable (§6.9) — `app_main` returns and the main task is deleted, so EcuM must have a scheduler slot like everything else.
@@ -100,7 +119,8 @@ merlin/
 ├── modules/esp32-wroom-32.json   # module wiring facts
 ├── devkits/devkit-*.json    # board header facts, pull-ups, onboard devices
 ├── overlays/                # per-project wiring deltas (v1.1)
-├── v01-reference/           # hand-built reference firmware = golden fixture #0 (§11)
+├── v01-reference/           # hand-built ESP32/host reference; future golden fixture #0 (§11)
+├── v01-hw364a-reference/    # planned second reference: ESP8266 + OLED, fixture #1
 ├── project.json             # composition entry point
 ├── project.lock             # generation record (§3.3)
 ├── install.sh · requirements.txt · docs/
@@ -108,19 +128,21 @@ merlin/
 Original mapping: `code/`→code, `scripts/`→scripts, `test/`→test, `handcode/`→handcode, `drivers/`→drivers, `devkit-hw394.json`→`devkits/devkit-hw394.json`, `project.json`→project.json, `install.sh`→install.sh.
 
 ### 3.2 Precedence & Regeneration Boundary
-`project.json` **requests**; the lock **records and pins**. Precedence for any configurable value: explicit project.json value > instance config > manifest default > interface default — conflicts reported, never silent. All JSON is RFC 8259 (no comments). **Regeneration boundary:** edits to manifests, interfaces, or schemas require regeneration; function-body edits do not. `wizard.py audit` (wired as a **CMake pre-build target**) verifies lock source hashes against the working tree, so the lock cannot drift silently.
+`project.json` **requests**; the lock **records and pins**. Precedence for any configurable value: explicit project.json value > instance config > manifest default > interface default — conflicts reported, never silent. Expand board-provided instances/defaults before resolution; re-expansion is idempotent. Fixed physical wiring is a constraint, not an overridable default: contradictory settings are rejected unless the configuration records a verified variant/physical change. All JSON is RFC 8259 (no comments). **Regeneration boundary:** edits to manifests, interfaces, or schemas require regeneration; function-body edits do not. `wizard.py audit` (wired as a **CMake pre-build target**) verifies lock source hashes against the working tree, so the lock cannot drift silently.
 
 ### 3.3 Lockfile & Determinism
-- `project.lock` records: generator + template versions, per-source content hashes (drivers/SWCs/interfaces), soc/module/board/overlay versions, schema versions, pinned ESP-IDF + toolchain, resolved dependencies, accepted warnings (ID + object + config-hash of the affected subtree).
+- `project.lock` records: generator + template versions, per-source content hashes (drivers/SWCs/interfaces), soc/module/board/overlay versions, schema versions, ECU profile and pinned SDK family/revision + toolchain + effective build configuration, resolved dependencies, accepted warnings (ID + object + config-hash of the affected subtree).
 - **Frozen generation** (`generate --frozen`) rejects any drift; `wizard.py resolve` refreshes the lock explicitly. The lock never overrides intent.
 - Generation renders to a staging directory; output replacement is atomic after successful validation + render. Interrupted generation leaves the previous output intact and buildable.
 - Determinism: all iteration sorted at boundaries; Jinja2 pinned; no timestamps by default; CI double-generate byte-diff.
 - **PlatformIO:** not a v1.0 target (cannot honor the pinned IDF). Returns v1.1+ as explicitly unpinned, best-effort, outside the reproducibility guarantee.
-- `install.sh`: idempotent, `--dry-run`, non-root (sudo only for system packages), ends with `wizard.py check-env`. Pins: ESP-IDF 5.2.3 toolchain, Espressif QEMU, Python ≥3.10 + jinja2/jsonschema/questionary/pytest.
+- `install.sh`: idempotent, `--dry-run`, non-root (sudo only for system packages), ends with `wizard.py check-env`. Current pins cover ESP-IDF 5.2.3, Espressif QEMU, Python ≥3.10 + jinja2/jsonschema/questionary/pytest. Planned target selection must isolate SDK environments, compiler prefixes, build directories and dependency pins. The present installer/checker does not support ESP8266; its QEMU check is ESP32-only.
 
 ---
 
-## 4. Data Models (schemaVersion 2.1.0)
+## 4. Data Models (2.1.0 examples; 2.2.0 target revision planned)
+
+The JSON examples in §4.1–4.5 describe the original ESP32 climate path. They are design examples, not measured board manifests or frozen schemas. Phase 3 must revise them to schemaVersion 2.2.0 with the target discriminant in §4.6; driver/interface semantic versions are independent. No JSON or schema files are added by this documentation revision.
 
 ### 4.1 Interface catalog — `interfaces/environmental.json`
 
@@ -141,9 +163,9 @@ Original mapping: `code/`→code, `scripts/`→scripts, `test/`→test, `handcod
 }
 ```
 
-`kind` ∈ `sample-group` (coherent measurement set + metadata) · `event` (queued, v1.1) · `state` (latest-value scalar) · `parameter` (calibratable, v1.1 Cal). Standard interfaces shipped: `HealthReport`, `PwmDutyCycle`, `DioLevel`, `PidParams`. **Interface semver rules:** adding an element = minor; unit change or range narrowing = major. `SUBSTITUTED` quality (v1.1) requires a per-element declared substitute value in the interface; interfaces without one never produce it. Metadata types (normative, in `Rte_Type.h`): `sampleTimeUs` = `int64` µs from `esp_timer_get_time()` (light-sleep behavior per pinned IDF version, recorded in lock); `sequence` = `uint32`, wrap-safe comparison; `quality` **per element**.
+`kind` ∈ `sample-group` (coherent measurement set + metadata) · `event` (queued, v1.1) · `state` (latest-value scalar; schema 2.2.0 also permits bounded structured state for `MonochromeFrame`) · `parameter` (calibratable, v1.1 Cal). Planned standard interfaces: `HealthReport`, `PwmDutyCycle`, `DioLevel`, `PidParams`. **Interface semver rules:** adding an element = minor; unit change or range narrowing = major. `SUBSTITUTED` quality (v1.1) requires a per-element declared substitute value in the interface; interfaces without one never produce it. Metadata types (normative, in `Rte_Type.h`): `sampleTimeUs` = `int64` µs from `esp_timer_get_time()` (light-sleep behavior per pinned IDF version, recorded in lock); `sequence` = `uint32`, wrap-safe comparison; `quality` **per element**.
 
-### 4.2 Driver type manifest — `drivers/bme280/bme280.json` (final, complete)
+### 4.2 Driver type manifest — `drivers/bme280/bme280.json` (design example; budgets unmeasured)
 
 ```json
 {
@@ -193,7 +215,7 @@ Original mapping: `code/`→code, `scripts/`→scripts, `test/`→test, `handcod
 
 Key semantics: `acquisitionPeriodMs` is what consumer `maxAgeMs` is validated against — **activation rate ≠ sample rate**. `retries: 1` = one additional attempt **on a later activation**, never inside the current one — this is what makes `maxElapsedMs` close (VAL-023). `addressSelection.type: strap` means the address is set by wiring (SDO pin): on collision the wizard **proposes a wiring change** and requires the configuration to describe the physical board; it never silently rewrites an address.
 
-### 4.3 SWC type manifest — `handcode/climatecontroller/climatecontroller.json` (final)
+### 4.3 SWC type manifest — `handcode/climatecontroller/climatecontroller.json` (design example)
 
 ```json
 {
@@ -358,6 +380,20 @@ Effective capability of any pin/resource = **SoC ∧ module ∧ board ∧ overla
 
 ---
 
+### 4.6 Target and HW-364A profile contract (planned schema 2.2.0)
+
+`target` gains a required `ecu` identifier (`esp32` or `esp8266`) and an SDK object containing family and exact revision; the existing `target.espIdf` value maps to the ESP32 SDK object. Keep the SoC/module/board/overlay tiers, radio flags, and target flash configuration. The ECU/SDK selection is independent of generic versus HW-364A board selection. Do not accept incompatible SDK/SoC pairs, unqualified profiles, unavailable peripherals, or a core outside the selected SoC (VAL-026). Lock and audit include this selection and resolved board devices/reservations so frozen generation cannot silently switch targets. A missing SDK pin prevents the ESP8266 profiles from becoming selectable.
+
+Planned artifacts are `soc/esp8266.json`, module manifests named after physically identified modules/packages, generic ESP8266 wiring profiles, `devkits/devkit-hw364a.json`, reusable `drivers/ssd1306/`, `interfaces/monochrome-frame.json`, and a display-demo SWC manifest. Do not infer the module identity from the board sales name. Board fields distinguish reference-derived values, physical confirmation, and measurements; unresolved values block qualification rather than receiving invented defaults.
+
+HW-364A reserves its onboard display's bus pins and 7-bit address from the verified wiring record in [ECU support](docs/ecu-support.md#board-evidence). GPIO numbers are authoritative; D-labels are annotations. Treat the onboard OLED as an ordinary driver instance in resource allocation, binding, health and initialization policy. Its `initPolicy.onFailure` is `degradable`: report the display fault and continue serial diagnostics/supervision. A disconnected OLED cannot provide a visible error indication.
+
+The initial `hw364a-oled-demo` project has Wi-Fi disabled, no Bluetooth, one logical core, one bounded display-transfer runnable and health/EcuM/log scheduling. Task periods, priorities, chunk size, timeouts, memory and recovery budgets come from that target's measurements; the climate project's values are not copied. A native ESP8266 backend must pass §6.10 before this project is a qualified reference.
+
+HW-394 example values also require board inspection. The example's LED/fan IO2 use, pull-ups, and reset levels are not established by the serial boot smoke test.
+
+---
+
 ## 5. Wizard Specification
 
 ### 5.1 CLI
@@ -373,27 +409,27 @@ Effective capability of any pin/resource = **SoC ∧ module ∧ board ∧ overla
 | `allocate` | Resource/pin allocation only (sticky — see §5.4) |
 | `rte` | Port wiring only |
 | `audit` | Verify lock source hashes vs working tree (also a CMake pre-build target) |
-| `check-env` | Toolchain verification (used by install.sh) |
+| `check-env` | Toolchain verification (used by install.sh); planned target selector verifies only the chosen SDK/backend |
 | `device-security --expert` | Guarded one-way eFuse/flash-encryption flow — **activated v1.2** |
 | `print-schema [project\|lock\|interface\|driver\|swc\|soc\|module\|board]` | Dump schemas (LLM/docs context) |
 
 Exit codes: 0 OK · 1 validation error · 2 environment error. PlatformIO output target: v1.1+, unpinned.
 
 ### 5.2 Interactive Steps
-S1 metadata → S2 target (soc/module/board/overlay + pinned IDF + radio flags) → S3 modules (v1.0 set selectable; planned grayed with target version; implicit modules not shown) → S4 driver types & instances (instance names mandatory; N instances of one type supported) → S5 buses & addresses (speed = min across attached devices, clamp **reported** VAL-017; collision on strap-addressed devices → **wiring-change proposal**; collision on software-addressed devices → auto-resolve) → S6 resource & pin allocation (§5.4) → S7 tasks & runnable mapping (ordered runnable lists; offsets auto-staggered where dividers are used) → S8 port wiring (auto-bind by interface + version; unresolved/ambiguous listed explicitly; failsafes, `maxAgeMs`, `acquisitionPeriodMs` shown; structural compatibility checked) → S9 review (VAL report, diff vs previous project.json, lock preview) → generate (staged, atomic).
+S1 metadata → S2 target (ECU + soc/module/board/overlay + pinned SDK + radio flags; expand board devices/reservations) → S3 modules (qualified ECU subset selectable; planned grayed with target version; implicit modules not shown) → S4 driver types & instances (instance names mandatory; N instances of one type supported) → S5 buses & addresses (speed = min across attached devices, clamp **reported** VAL-017; collision on strap-addressed devices → **wiring-change proposal**; collision on software-addressed devices → auto-resolve) → S6 resource & pin allocation (§5.4) → S7 tasks & runnable mapping (ordered runnable lists; offsets auto-staggered where dividers are used) → S8 port wiring (auto-bind by interface + version; unresolved/ambiguous listed explicitly; failsafes, `maxAgeMs`, `acquisitionPeriodMs` shown; structural compatibility checked) → S9 review (VAL report, diff vs previous project.json, lock preview) → generate (staged, atomic).
 
 ### 5.3 Dependency Resolution
-Selecting a device instance auto-selects `requiresModules` (reported: `[+] I2c auto-selected (required by bme280)`) and reserves its bus instance, peripheral controller, and timer/channel resources. Removal of a module in use is refused (VAL-006).
+Selecting a device instance auto-selects `requiresModules` (reported: `[+] I2c auto-selected (required by bme280)`) and reserves its bus instance, peripheral controller, and timer/channel resources. Board defaults first expand into normal device instances: selecting HW-364A adds `onboardOled`/`ssd1306` and its verified bus resources, reported in the same review. Generic ESP8266 starts with no onboard device defaults. Removal of a module in use is refused (VAL-006). Shared I2C devices use one compatible bus definition with distinct addresses; default expansion cannot create duplicate instances or silently reassign resources.
 
 ### 5.4 Resource & Pin Allocation
 
-**Allocation domain** — a *resource table*, not just pins: pins; I2C/SPI/UART controller instances; LEDC timers & channels **per speed group**; ADC units & channels; RMT channels.
+**Allocation domain** — a target-specific *resource table*, not just pins. ESP32 resource kinds include: pins; I2C/SPI/UART controller instances; LEDC timers & channels **per speed group**; ADC units & channels; RMT channels.
 
 **Exclusivity vs. compatible sharing:** a resource is exclusive by default; PWM channels may **share a timer when their configuration matches** (frequency/resolution) — the allocator permits compatible sharing and rejects incompatible sharing (VAL-001 generalizes to all resource kinds).
 
 **Native-mux rule (project policy, labeled as such):** functions above the SoC-profile threshold (default 40 MHz) bind only to pins whose `native_mux` lists that function (VAL-016). I2C has **no** native-mux constraint on ESP32 (matrix-only peripheral); its constraint is electrical — see VAL-018.
 
-**Hard blocks:** module-blocked pins (GPIO6–11 flash; GPIO37/38 absent on WROOM-32); output or pull configuration on input-only pins (VAL-002); ADC2 channels while radio is active (VAL-004, Error — evaluated when radio modules become selectable, v1.1+).
+**Hard blocks:** apply the selected SoC/module/board constraints. ESP32 examples: module-blocked pins (GPIO6–11 flash; GPIO37/38 absent on WROOM-32); output or pull configuration on input-only pins (VAL-002); ADC2 channels while radio is active (VAL-004, Error — evaluated when radio modules become selectable, v1.1+).
 
 **Electrical check (computed, not labeled):** I2C rise time ≈ 0.847·R·C must satisfy the mode's rise-time limit (1000 ns @100 kHz, 300 ns @400 kHz per I2C-bus spec) using the declared pull-up value and an assumed/declared bus capacitance. Above 100 kHz, external pull-ups are **required** (VAL-018 Error if unmet). No unconditional claims about internal pull-ups are made.
 
@@ -432,6 +468,7 @@ Selecting a device instance auto-selects `requiresModules` (reported: `[+] I2c a
 | VAL-023 | Execution-contract closure: **generator derives** `maxElapsedMs ≥ transactionTimeoutMs + recovery.budgetUs` (when in-budget); rejects declarations that don't close | Error |
 | VAL-024 | Interface version incompatibility between connection endpoints (semver rules §4.1) | Error |
 | VAL-025 | Structural binding: provider element range ⊆ consumer accepted range; exact unit match; no implicit type conversion | Error |
+| VAL-026 | ECU/SoC/SDK compatibility and qualified capability selection: exact SDK pin, valid core/peripherals, board reservations, supported supervision and build backend | Error |
 
 **Runtime faults (RTF), raised by generated code, qualified by Hm:** RTF-001 data-range violation (per element) · RTF-002 deadline overrun · RTF-003 missed/late activation · RTF-004 stale input · RTF-005 init failure · RTF-006 bus communication fault · RTF-007 NvM block CRC invalid (v1.1).
 
@@ -440,6 +477,8 @@ Errors block generation; warnings require per-ID acknowledgment (interactive) re
 ---
 
 ## 6. Runtime Specification
+
+§6.1–6.9 describe the ESP32 reference contract. Portable semantics (sample age, RTE boundaries, bounded work, fault qualification and safe shutdown) apply to both ECUs; ESP32-specific API names, core placement and watchdog mechanisms require the explicit mapping in §6.10 on ESP8266. A missing equivalent blocks qualification rather than silently weakening the contract.
 
 ### 6.1 Tasks & Timing Model
 
@@ -523,10 +562,24 @@ Shutdown: `EcuM_Shutdown` → actuators to failsafe **first** → (v1.1) bounded
 
 ---
 
+### 6.10 ESP8266 backend qualification
+
+Keep common RTE, driver and SWC contracts while implementing the smallest target-specific MCAL/Os/EcuM adapters. ESP8266 uses one core; derive priorities and interference from its own SDK, and validate the effective tick. Provide monotonic `int64` microsecond time (including wrap handling), bounded critical sections, startup notification/epoch behavior, skip/deadline checks, reset reasons and retained boot-loop accounting. Record whether any timer survives reset; uptime alone cannot measure a window spanning resets.
+
+Map L0/watchdog behavior explicitly, including supervision of each required task, post-gate activation, one healthy-activation feed, and a terminal SAFE_HALT that remains stable without reset loops. ESP-IDF 5.2.3 TWDT subscription APIs and RTC annotations cannot simply be compiled for ESP8266. If an equivalent cannot be demonstrated, keep the target at bring-up status and record the gap.
+
+Qualify I2C's actual timeout, clock stretching, error mapping and recovery on the selected SDK revision. The [ESP8266 I2C API](https://docs.espressif.com/projects/esp8266-rtos-sdk/en/latest/api-reference/peripherals/i2c.html) uses command links and synchronous transfers; inspect allocation and timeout behavior before choosing it for a steady-state path. No dynamic allocation per display update, no unbounded retry, and no frame transfer inside an RTE critical section. A full 128×64 monochrome buffer is 1,024 bytes; payload plus ACK bits alone costs about 92.16 ms at 100 kHz (`1024 × 9 / 100000`). This is a calculated lower bound, not a measurement: use bounded chunks across activations and measure complete-frame latency separately.
+
+Radio is disabled for initial qualification. Arduino Adafruit/U8g2 sketches from R8 may be used later as an independent hardware baseline; their successful display output does not qualify Merlin's drivers or runtime.
+
+---
+
 ## 7. Build System & Generated Project
 
 ### 7.1 Native ESP-IDF CMake (primary, approved)
 `code/` is a native ESP-IDF project (`CMakeLists.txt`, `sdkconfig.defaults`, `idf.py`). Generated `sdkconfig.defaults` includes: `CONFIG_FREERTOS_HZ=1000`, static allocation, TWDT config, console settings. The generator **validates the effective sdkconfig** — writing defaults is insufficient when a full `sdkconfig` exists.
+
+This is the ESP32 build profile. The planned ESP8266 output uses the candidate ESP8266 RTOS SDK v3.4/GCC 8.4.0 build, with its build commands/component dependencies established during qualification. ESP-IDF 5.2.3 is not an ESP8266 target backend. Each project generates one target tree; build jobs and SDK environments remain isolated. Arduino examples do not change the generated-project build contract.
 
 ### 7.2 No Source Copying
 Driver and SWC sources are **referenced, never copied**, via `EXTRA_COMPONENT_DIRS` → repo `drivers/`, `handcode/`. `code/` contains only generated artifacts (`*_Cfg.c`, Rte, Os, EcuM, Hm, IoHwAb, app_main, build files), each carrying the GENERATED banner. Zero hand-code in the generated tree is a hard invariant.
@@ -542,6 +595,8 @@ Every directory is an ESP-IDF component (`idf_component_register`). Dependency m
 | Rte | Std, Rte_Types | freertos, esp_timer |
 | Swc_ClimateController | Rte, LibPid | — |
 
+The second reference adds `Drv_Ssd1306` (public Std/Rte/MCAL I2c contract) and `Swc_DisplayDemo` (Rte only). The SDK dependency names in MCAL/Os/EcuM are backend-specific; verify them against the pinned ESP8266 SDK. Driver and SWC sources must not include Arduino `Wire`, display-library, or SDK headers. Include/symbol checks cover both BME280 and OLED paths.
+
 `REQUIRES` is **defense-in-depth** (IDF auto-exposes freertos/HAL/log to all components; public deps propagate). The architecture boundary of §2.1 is enforced by **include/symbol linting plus negative compile tests**, e.g. `test/layering/neg_swc_includes_driver.c` — a file that includes `bme280.h` in SWC context, which CI must fail to build. `wizard.py audit` runs as a CMake pre-build target.
 
 ---
@@ -549,13 +604,19 @@ Every directory is an ESP-IDF component (`idf_component_register`). Dependency m
 ## 8. Verification & Acceptance
 
 ### 8.1 Generator Tests (built BEFORE the generator)
-Checked-in `project.json` fixtures → **byte-exact golden output trees**, run in CI. The v0.1 reference tree (§11) is **fixture #0** — the harness and comparator exist before the generator writes its first file. Plus: double-generate determinism job; template-version-pinned diff.
+Checked-in `project.json` fixtures → **byte-exact golden output trees**, run in CI. The completed, qualified ESP32 reference tree (§11) becomes **fixture #0** — the harness and comparator exist before the generator writes its first file. Plus: double-generate determinism job; template-version-pinned diff.
+
+The qualified HW-364A tree becomes **fixture #1**. Each fixture pins its own SDK/profile and tests generation, build, layering and host behavior separately. Golden status requires the completed reference and board evidence; neither current partial firmware nor an upstream Arduino example is already a golden reference.
 
 ### 8.2 Generated-Project Tests
 - **Host (native):** ASW + Rte + mocked MCAL with a **fault-injection API** (`MockI2c_InjectFault(NACK|TIMEOUT|STUCK)`); driver `_calc.c` unit-tested against the datasheet worked example.
 - **QEMU:** documented supported-peripheral profile (GPIO, UART, timers; **no I2C device models** — QEMU is a boot/integration check, not a driver bench; host mocks do not make firmware QEMU-runnable). The test SWC emits one **structured JSON line** per instance (health + supervision counters); the test asserts on the **parsed structure**, never the console transcript (dual-core log ordering is non-deterministic).
 
 ### 8.3 Acceptance Scenarios & Required Measurements
+
+The table below retains the HW-394 climate scenarios. HW-364A adds TST-OLED-01…08 in [ECU support](docs/ecu-support.md#hw-364a-acceptance): identification/wiring, visible patterns, chunk scheduling, faults/recovery, initialization failure, snapshot ownership, allocation tracing, and target supervision. Common runtime scenarios run on each qualified backend; sensor/fan scenarios require those devices and are not replaced by an OLED test. Record evidence and unresolved measurements per ECU in [measurements](docs/measurements.md).
+
+HW-364A requires host checks for frame packing/bounds, transfer progression and injected faults, plus physical OLED checks for orientation, full-screen patterns and changing counters. Serial counters prove transfer progress only; a visible panel check is required. The present Espressif ESP32 QEMU machine provides no HW-364A/OLED evidence.
 
 | Scenario | Required evidence |
 |---|---|
@@ -597,7 +658,9 @@ Requirement IDs `REQ-ARCH/GEN/RUN/DATA/BSW-nnn`, each mapped to design section, 
 | REQ-BSW-002 | Boot loop terminates in SAFE_HALT | §6.5 | — | TST-ACC-10 |
 | REQ-GEN-001 | Byte-identical regeneration from identical lock + inputs | §3.3 | — | CI double-generate |
 
-**NFRs:** generation ≤ 30 s for ≤ 50 device instances / 30 SWC instances / 8 tasks; ESP-IDF pinned per lock (5.2.3 line at v1.0); Linux reference OS.
+The traceability matrix also includes REQ-ECU-001…003, REQ-DISP-001…003, REQ-BOARD-001 and REQ-DRV-001 for target selection, backend qualification, reproducibility, OLED composition, bounded transfers and board evidence. These are requirements awaiting implementation evidence.
+
+**NFRs:** generation ≤ 30 s for ≤ 50 device instances / 30 SWC instances / 8 tasks (generator capacity, not a promise that either MCU can host that workload); SDK/compiler pinned per ECU lock (ESP32: ESP-IDF 5.2.3; ESP8266 candidate: ESP8266 RTOS SDK v3.4/GCC 8.4.0, qualification pending); Linux reference OS.
 
 ---
 
@@ -605,9 +668,9 @@ Requirement IDs `REQ-ARCH/GEN/RUN/DATA/BSW-nnn`, each mapped to design section, 
 
 | Version | Content |
 |---|---|
-| **v0.1 — Reference Path** (delivered, §11) | Hand-built firmware proving the runtime contract on HW-394: 2× BME280 instances, I2C/PWM/GPIO, one controller SWC, coherent samples, bounded bus access + recovery, EcuM startup gate + SAFE_HALT, L1/L2/L3 supervision, fault injection. **Hardware validation + measurements before anything is frozen.** |
+| **v0.1 — Reference Paths** (in progress, §11) | Complete HW-394 climate runtime and add HW-364A OLED runtime with a qualified ESP8266 backend. **Separate hardware validation + measurements before either becomes a golden fixture.** |
 | **Schema freeze** | Measured numbers encoded into manifests; runtime-facing schemas (§4) frozen |
-| **v1.0 — Generator MVP** | The wizard reproduces the reference path byte-for-byte (fixture #0) + the ten MCAL modules + Os/EcuM/Det/Hm/Log + full VAL/RTF set + generator CI. *Nothing the reference path did not prove.* |
+| **v1.0 — Generator MVP** | Reproduce both qualified reference paths (fixtures #0/#1), target-specific module capabilities, Os/EcuM/Det/Hm/Log, all applicable VAL/RTF rules and per-target CI. Unproven catalog modules remain non-selectable. |
 | **v1.1** | Async bus transfers (lifting VAL-019) with synchronous facade; queued/event ports; IRQ runnables (dedicated event tasks, IRAM whole-graph); Cal + XCP-on-UART; NvM; overlays; Twai; BswM-style mode management; GPTimer release option; PlatformIO (unpinned, best-effort) |
 | **v1.2** | ESP32-S3/C3 SoC profiles; ULP; secure boot / flash encryption via guarded expert flow; E2E protection on Twai; Eth, Sdio; crypto + entropy gating |
 | **v2.0** | Broader catalog; GUI configurator on the same JSON model |
@@ -616,7 +679,7 @@ Requirement IDs `REQ-ARCH/GEN/RUN/DATA/BSW-nnn`, each mapped to design section, 
 
 ## 11. Reference Implementation (v0.1) — Status
 
-Delivered in the prior revision; tree:
+`v01-reference/` contains the hand-built ESP32 climate path: MCAL, dual-instance BME280 transport, RTE, PID/controller, PWM fan path, static tasks/startup gate, supervision, structured fake-sensor output, host tests and a provider-agnostic host OLED/display slice. It builds and has booted in QEMU and on HW-394. The default smoke image uses fake sensors; real external sensor measurements, ESP8266 backend qualification and HW-364A physical evidence remain open. The intended completed tree is:
 
 ```
 v01-reference/
@@ -630,28 +693,31 @@ v01-reference/
     LibPid/  Swc_ClimateController/  IoHwAb/  Hm/  Log/  EcuM/
 ```
 
-It demonstrates: instance model, sample contract + per-element quality, freshness from `sampleTimeUs`, critical-section RTE transfer, startup gate + epoch, skip re-anchor + activation delta, structured `Mcal_ResultType` + 9-clock recovery with cooldown, triggerable IoHwAb failsafe, L1/L2 in the task wrapper, Hm debounce, EcuM SAFE_HALT + RTC forensics.
+It must demonstrate: instance model, sample contract + per-element quality, freshness from `sampleTimeUs`, critical-section RTE transfer, startup gate + epoch, skip re-anchor + activation delta, structured `Mcal_ResultType` + 9-clock recovery with cooldown, triggerable IoHwAb failsafe, L1/L2 in the task wrapper, Hm debounce, EcuM SAFE_HALT + RTC forensics.
 
 **Two normative patches to apply before hardware validation** (identified during final consolidation): (1) TWDT subscription moved to **after** the startup gate, with **one feed per activation** in the wrapper; (2) SAFE_HALT **unsubscribes** from the TWDT (version-robust; does not rely on blocked-task exemption).
 
-This tree is **golden fixture #0**; the fixture harness is built against it before the generator exists.
+When complete and measured, this tree becomes **golden fixture #0**. Planned `v01-hw364a-reference/` becomes **fixture #1** after its own backend, OLED and supervision acceptance. Neither reference authorizes starting the generator before the fixture harness. [Measurements](docs/measurements.md) records the limited evidence currently available.
 
 ---
 
 ## 12. Open Points (final remaining)
 
-1. **HW-394 board manifest population** — schema ready; header/pull-up/onboard-device data to be verified against a physical board.
+1. **HW-394 board manifest population** — design fields drafted; schemas and physical header/pull-up/onboard-device verification remain pending.
 2. **v1.1 UART multiplexing** — XCP tuning and log on one framed UART vs. a dedicated second UART.
 3. **v1.1 async driver API shape** — preferred: async core with a synchronous bounded facade; alternative: completion callbacks. Decide at v1.1 design.
 4. **Substitute-value policy** (v1.1) — which interfaces declare per-element substitutes and who owns substitution on INVALID.
+5. **HW-364A board identity** — confirm processor/module marking, flash size, OLED wiring/controller behavior, fitted pull-ups, header exposure and reset behavior on the physical unit. Resolve reference D-label ambiguity using GPIO numbers.
+6. **ESP8266 backend qualification** — verify the candidate ESP8266 RTOS SDK v3.4/GCC 8.4.0 pin, prove §6.10, and record build/environment instructions before claiming support. No native ESP8266 implementation exists yet.
+7. **OLED execution contract** — measure bounded chunk/command time, recovery and full-frame latency under load; freeze static buffer ownership and scheduling from evidence.
 
 ---
 
-## Appendix A — Decision Record (headline decisions, all FINAL)
+## Appendix A — Decision Record (adopted scope; qualification still required)
 
 | # | Decision |
 |---|---|
-| 1 | Native ESP-IDF CMake primary; PlatformIO out of v1.0 (owner-approved) |
+| 1 | Native ESP-IDF CMake for ESP32; separate native ESP8266 backend pending qualification; PlatformIO out of v1.0 |
 | 2 | Type/instance split for drivers and SWCs; context-pointer calling convention |
 | 3 | Provider-agnostic port interfaces with semver; binding structural w/ subtyping |
 | 4 | Sample contract: per-element quality, `sampleTimeUs` int64 µs, `sequence` uint32 wrap-safe |
@@ -665,11 +731,15 @@ This tree is **golden fixture #0**; the fixture harness is built against it befo
 | 12 | Co-location rule VAL-019 for v1.0; async state-machine drivers lift it in v1.1 |
 | 13 | `Mcal_ResultType` structured; Det separate, misuse-only; Det/Log non-blocking |
 | 14 | Reset-window safe state = hardware guarantee (board `idleLevel` declared) |
-| 15 | v1.0 scope = exactly the v0.1-proven path, generated; harness before generator |
+| 15 | v1.0 scope = the two qualified v0.1 ECU reference paths, generated; harness before generator |
 | 16 | Lock records and pins, never overrides; `--frozen` + explicit `resolve` |
 | 17 | RTA (not RMS) for VAL-012; Info severity; explicitly not a proof |
 | 18 | Cal = XCP-on-UART CTO subset (v1.1); parameter ports in schemas from day one |
+| 19 | Generic ESP8266 ECU + HW-364A board + reusable SSD1306 driver added by owner, 2026-09-19; documentation first, Luna Code implementation next |
+| 20 | ECU profiles have separate SDK/capability/measurement records; one ECU per generated project; no cross-ECU transport added |
+| 21 | OLED data passes through RTE → driver → MCAL; bounded chunks, static frame ownership, physical visual acceptance |
+| 22 | ECU, board and device driver are independent selections; HW-364A expands to an ordinary OLED instance and fixed physical reservations; generic ESP8266 has no default devices |
 
 ---
 
-**Immediate next actions:** apply the two v0.1 patches → run the acceptance scenarios and measurement campaign on hardware (§8.3) → encode measured numbers into the manifests → freeze the §4 schemas → build the fixture harness against `v01-reference/` → start the generator with fixture #0 as its first regression target.
+**Immediate next actions for Luna Code:** qualify and pin the generic ESP8266 backend and verify HW-364A wiring → implement the reusable SSD1306 driver and configured OLED reference, and complete the existing HW-394 runtime → run each ECU/device combination's acceptance/measurements (§8.3) → encode measured numbers and freeze §4 schema 2.2.0 → build fixtures #0/#1 and generic/default-selection cases → implement the generator. This documentation change starts none of those code or flashing actions.

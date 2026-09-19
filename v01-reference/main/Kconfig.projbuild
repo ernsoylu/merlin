@@ -1,0 +1,24 @@
+menu "Merlin reference"
+
+config MERLIN_FAKE_SENSORS
+    bool "Use deterministic fake BME280 transport"
+    default y
+    help
+        Enables the QEMU/reference path. Set false for a wired sensor bench.
+
+config MERLIN_I2C_SDA_GPIO
+    int "Reference I2C SDA GPIO"
+    range 0 39
+    default 21
+
+config MERLIN_I2C_SCL_GPIO
+    int "Reference I2C SCL GPIO"
+    range 0 39
+    default 22
+
+config MERLIN_FAN_GPIO
+    int "Reference fan PWM GPIO"
+    range 0 39
+    default 2
+
+endmenu

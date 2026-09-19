@@ -1,32 +1,43 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides repository guidance for coding agents, including Luna Code.
+The 2026-09-19 ECU expansion is documentation-only; implement it in a subsequent
+coding task using the handoff below.
 
 ## What this is
 
 Merlin is a **code generator**, not firmware. It reads JSON manifests and emits
-a native ESP-IDF project for ESP32-WROOM with an AUTOSAR-style layered stack
-(MCAL / drivers / RTE / BSW / ASW) already wired together.
+a target-specific native SDK project for ESP32 or ESP8266 with an AUTOSAR-style
+layered stack (MCAL / drivers / RTE / BSW / ASW) already wired together.
 
 Two documents are normative and outrank anything inferred from the tree:
 
 - **[PROJECT_DEFINITION.md](PROJECT_DEFINITION.md)** — the approved design,
-  v2.1.0, FINAL. Section numbers referenced below are its sections. If code and
-  that document disagree, the document wins until it is amended.
+  v2.2.0, owner-requested ECU scope amendment. Section numbers below refer to
+  that document. If code and the document disagree, the document wins until amended.
 - **[NEXT_STEPS.md](NEXT_STEPS.md)** — the phased plan and where work currently
   sits. Update its status table when a phase gate passes.
 
-**Current state: the repository contains documentation only.** No generator, no
-schemas, no reference firmware. `v01-reference/` is described in §11 as
-delivered *in a prior revision elsewhere* — it is not in this tree and has to be
-built here (NEXT_STEPS Phase 1). Do not write code that assumes any of the
-directories in §3.1 already exist.
+**Current state:** toolchain/CLI skeleton, host tests and a partial ESP32
+`v01-reference/` exist. Build/QEMU/hardware boot smoke passed; two fixed INITIAL
+records do not establish working sensors, startup gate or supervision. The
+generator, frozen schemas and ESP8266/OLED implementation do not exist.
+The layering negative case can fail on an uninitialized variable and must be
+made diagnostic-specific before claiming architectural enforcement.
+
+[ECU support](docs/ecu-support.md) is the target/board/driver contract and Luna
+handoff; [measurements](docs/measurements.md) records actual evidence. ECU target,
+board profile and device driver are separate selections. Generic ESP8266 selects
+drivers/wiring explicitly; HW-364A auto-adds one standard SSD1306 instance and
+its verified pins/address. Never fork the OLED driver for that board.
 
 ## Commands
 
-Nothing is implemented yet; these are the target interfaces, defined in §3.3 and
-§5.1. Use them as written when you build them — scripts and CI will depend on
-the spelling.
+The installer, `check-env`, host tests and Python environment tests exist.
+Other wizard subcommands are placeholders returning exit 2. The commands below
+mix available tooling and planned interfaces (§3.3/§5.1); generator/fixture
+commands remain future work. ESP8266 target options/build commands are not yet
+implemented. Preserve established command spelling when extending them.
 
 ```bash
 ./install.sh [--dry-run]              # idempotent; pins IDF 5.2.3 + QEMU + python deps
@@ -62,9 +73,22 @@ wrong, the template or the manifest is wrong.
 points at `drivers/` and `handcode/` in the repo. A generator that copies
 sources into `code/` has broken the regeneration boundary.
 
-**ESP-IDF is pinned at 5.2.3.** The component is `driver` — `esp_driver_i2c`
+**ESP32 uses ESP-IDF 5.2.3.** The component is `driver` — `esp_driver_i2c`
 and friends exist only from 5.3 and must not appear anywhere. When checking IDF
 API shapes, check them against 5.2.3, not against latest.
+
+**ESP8266 is a separate backend.** Qualify/pin its native ESP8266 RTOS SDK and
+compiler before implementation acceptance. The current installer/toolchain.env
+is ESP32-only. Reuse portable driver/RTE/SWC contracts; adapt MCAL/Os/EcuM for
+the target's timing, allocation, watchdog and reset semantics. Keep SDK
+environments separate. Generic ESP8266 and HW-364A use the same backend.
+
+**Board defaults are ordinary instances plus physical constraints.** Expand
+HW-364A's OLED instance once before dependency resolution/allocation, auto-select
+I2c, reserve its pins/address, and report them in review/lock output. Re-loading
+must be idempotent. Conflicting physical wiring is an error, not an override.
+Disabling display software does not free soldered pins/address. Other I2C
+devices may share the compatible bus at distinct addresses and within budgets.
 
 **Generation is deterministic.** Sort every iteration at the boundary where
 output order is decided, never emit a timestamp by default, keep Jinja2 pinned.
@@ -79,14 +103,22 @@ Reassignment without an explicit release is VAL-015, an Error.
 `project.lock` is history. A code path where the lock silently changes what gets
 generated is a bug, no matter how convenient.
 
-**VAL/RTF identifiers are stable.** `VAL-001`…`VAL-025`, `RTF-001`…`RTF-007` are
+**VAL/RTF identifiers are stable.** `VAL-001`…`VAL-026`, `RTF-001`…`RTF-007` are
 referenced from the traceability matrix, from `acknowledgedWarnings` entries in
 user projects, and from tests. Add new IDs at the end; never renumber, never
 reuse.
 
+VAL-026 rejects incompatible/unqualified ECU/SDK/driver capabilities. Draft
+schemaVersion 2.1.0 examples remain in the specification; Phase 3 revises/freezes
+2.2.0 with independent ECU, SDK and board selection. Do not create schema or
+manifest files during a documentation-only task.
+
 ## Runtime rules the generated code must honour
 
 Getting these wrong produces firmware that looks fine and is subtly untrustworthy.
+
+ESP32-specific mechanisms below require a demonstrated ESP8266 equivalent
+(PROJECT_DEFINITION §6.10); shared semantics do not imply shared SDK APIs.
 
 - **`sampleTimeUs` is not a publication time.** A driver republishing a cached
   reading leaves the timestamp and the `sequence` counter alone. That is the
@@ -123,6 +155,11 @@ Getting these wrong produces firmware that looks fine and is subtly untrustworth
 - **Det and Log never block.** Static ring drained by a low-priority task,
   overflow counter on full. A NACKing driver that logs through a blocking UART
   causes the deadline misses it is reporting.
+- **OLED transfer is bounded work.** Static, immutable active-frame ownership;
+  bounded pending storage; chunks across activations with bounded retry/recovery.
+  No I2C transfer in an RTE critical section. Do not copy BME280 transaction
+  budgets to an entire display frame. Count completed frame transfers separately
+  from physical visible-output acceptance.
 
 ## File organisation
 
@@ -136,6 +173,11 @@ the host against the datasheet's worked example; `bme280.c` talks to the chip.
 Hardware validation is expensive and deferred, so the host-tested half is the
 only part with real evidence behind it — put anything that can be computed
 without a bus on that side of the line.
+
+Apply the same split to SSD1306 packing/geometry and command transport. Hardware
+pins live in board/instance configuration; neither SSD1306 nor BME280 contains
+HW-364A-specific conditionals. Raw ESP8266 driver compatibility is qualified per
+combination; ESP32-only MCAL peripherals must never become silent stubs.
 
 Before writing a helper, look for one that exists. The repository is meant to
 accumulate reusable driver arithmetic; a second debouncer or a second PID is a
@@ -177,6 +219,8 @@ and commit messages must not quietly reintroduce them:
 
 ## Hardware facts worth not rediscovering
 
+The following bullets describe ESP32/WROOM; do not use them as an ESP8266 pin map.
+
 - GPIO6–11 are the on-module SPI flash on WROOM-32. GPIO37/38 are not bonded
   out. Neither is routable, ever.
 - GPIO34–39 are input-only with no internal pull resistors — an output or pull
@@ -189,6 +233,12 @@ and commit messages must not quietly reintroduce them:
   100 kHz and 300 ns at 400 kHz. Above 100 kHz, external pull-ups are required.
 - ADC2 is shared with the radio.
 
+For HW-364A, use the sourced configuration and verification checklist in
+[board evidence](docs/ecu-support.md#board-evidence). Numeric GPIOs are
+authoritative, not D-label aliases. Flash size, pull-ups and module identity
+remain physical verification items. Generic ESP8266 assumes no onboard OLED
+and requires explicit wiring; no HW-394 limits or SDK resources are inherited.
+
 ## Testing posture
 
 Host tests are plain `gcc` plus `assert()` with ASan and UBSan — no framework,
@@ -200,3 +250,9 @@ and the exact tree it must produce, compared byte for byte. **The fixture
 harness is built before the generator** (§8.1) — that ordering is deliberate and
 is Phase 4 in NEXT_STEPS. Do not start emitting files before there is something
 that can tell you the output changed.
+
+Fixture #0 is the completed HW-394 reference; fixture #1 is the qualified
+HW-364A OLED reference. Add generic ESP8266 and board-default/conflict cases.
+Real OLED patterns, error recovery and ESP8266 supervision are physical tests;
+the existing ESP32 QEMU smoke is no substitute. Preserve evidence levels in
+documentation: planned, implemented, host-tested, and hardware-qualified.
