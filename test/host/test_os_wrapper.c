@@ -1,6 +1,12 @@
 #include <assert.h>
 #include "Os_Wrapper.h"
 
+static void event_runnable(void *context)
+{
+    unsigned int *calls = context;
+    (*calls)++;
+}
+
 int main(void)
 {
     Os_ReleaseStateType state;
@@ -15,5 +21,16 @@ int main(void)
     assert(state.lateActivations == 1 && state.lastFault == OS_RTF_LATE_ACTIVATION);
     assert(Os_DeadlineCheck(&state, 41, 40));
     assert(state.deadlineMisses == 1 && state.lastFault == OS_RTF_DEADLINE);
+
+    unsigned int calls = 0U;
+    Os_EventTaskConfigType event = {
+        .runnable = event_runnable,
+        .context = &calls
+    };
+    assert(Os_EventTaskDispatch(&event));
+    assert(calls == 1U);
+    assert(!Os_EventTaskDispatch(0));
+    event.runnable = 0;
+    assert(!Os_EventTaskDispatch(&event));
     return 0;
 }

@@ -34,7 +34,7 @@ simulation provider only.
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
-| 7 | v1.1 | — | **started; Packages 7A–7C async-bus and event-port contracts complete** |
+| 7 | v1.1 | — | **started; Packages 7A–7D async-bus, event-port, and IRQ-task contracts complete** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -785,6 +785,15 @@ rate per activation. ESP32 uses `xQueueCreateStatic`; host tests use identical
 ring semantics. Drop counters and both drop-newest/drop-oldest policies are
 covered. ISR integration, event-task generation, and physical qualification
 remain deferred to the following package and final hardware pass.
+
+### Package 7D — IRQ runnable task bridge — 2026-09-20
+
+Complete for the current software-only scope. `Os_CreateStaticEventTask` creates
+a static FreeRTOS event task that blocks on a direct notification, while
+`Os_NotifyEventFromIsr` performs only the bounded ISR-safe notification and
+requests a context switch. The runnable executes in task context through the
+host-tested dispatch guard. No interrupt registration, peripheral ISR, whole
+reachable-graph IRAM audit, target timing, or physical qualification is claimed.
 
 1. **Async bus transfers with a synchronous bounded facade** — lifts VAL-019,
    the co-location rule, which is the largest artificial constraint in v1.0.

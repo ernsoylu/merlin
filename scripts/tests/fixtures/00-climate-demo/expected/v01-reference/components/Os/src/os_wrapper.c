@@ -4,6 +4,15 @@
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 
+static void event_task_entry(void *argument)
+{
+    Os_EventTaskConfigType *config = argument;
+    for (;;) {
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        (void)Os_EventTaskDispatch(config);
+    }
+}
+
 static void task_entry(void *argument)
 {
     Os_TaskConfigType *config = argument;
@@ -62,11 +71,44 @@ int Os_ReleaseTask(Os_TaskConfigType *config)
     return xTaskNotifyGive(config->handle) == pdPASS;
 }
 
+int Os_CreateStaticEventTask(Os_EventTaskConfigType *config)
+{
+    if (config == 0 || config->runnable == 0 || config->stack == 0 ||
+        config->stackWords == 0U) {
+        return 0;
+    }
+    config->handle = xTaskCreateStatic(event_task_entry, config->name,
+                                       config->stackWords, config,
+                                       config->priority, config->stack,
+                                       &config->storage);
+    return config->handle != NULL;
+}
+
+int Os_NotifyEventFromIsr(Os_EventTaskConfigType *config)
+{
+    if (config == 0 || config->handle == NULL) {
+        return 0;
+    }
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(config->handle, &higherPriorityTaskWoken);
+    portYIELD_FROM_ISR(higherPriorityTaskWoken);
+    return 1;
+}
+
 void Os_UnsubscribeWatchdog(void)
 {
     (void)esp_task_wdt_delete(NULL);
 }
 #endif
+
+int Os_EventTaskDispatch(Os_EventTaskConfigType *config)
+{
+    if (config == 0 || config->runnable == 0) {
+        return 0;
+    }
+    config->runnable(config->context);
+    return 1;
+}
 
 void Os_ReleaseInit(Os_ReleaseStateType *state, int64_t firstBoundary)
 {

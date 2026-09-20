@@ -6,6 +6,10 @@
 #ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_attr.h"
+#define OS_ISR_ATTR IRAM_ATTR
+#else
+#define OS_ISR_ATTR
 #endif
 
 typedef struct {
@@ -63,9 +67,26 @@ typedef struct {
 #endif
 } Os_TaskConfigType;
 
+typedef struct {
+    const char *name;
+    uint32_t priority;
+    Os_RunnableFn runnable;
+    void *context;
+    Os_StackType *stack;
+    uint32_t stackWords;
+    Os_TaskStorageType storage;
+#ifdef ESP_PLATFORM
+    TaskHandle_t handle;
+#endif
+} Os_EventTaskConfigType;
+
+int Os_EventTaskDispatch(Os_EventTaskConfigType *config);
+
 #if defined(ESP_PLATFORM) && !defined(MERLIN_HW364A)
 int Os_CreateStaticTask(Os_TaskConfigType *config);
 int Os_ReleaseTask(Os_TaskConfigType *config);
+int Os_CreateStaticEventTask(Os_EventTaskConfigType *config);
+int Os_NotifyEventFromIsr(Os_EventTaskConfigType *config) OS_ISR_ATTR;
 void Os_UnsubscribeWatchdog(void);
 #endif
 
