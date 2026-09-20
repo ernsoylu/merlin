@@ -1,0 +1,32 @@
+[
+  {
+    "name": "normal",
+    "target": "esp32",
+    "configuration": "CONFIG_MERLIN_FAKE_SENSORS=y;CONFIG_MERLIN_FAKE_DISCONNECT_SENSOR=-1;CONFIG_MERLIN_INJECT_SLOW_T500=0",
+    "evidence": "structured READY records with increasing sequences"
+  },
+  {
+    "name": "fake-disconnect-recovery",
+    "target": "esp32",
+    "configuration": "CONFIG_MERLIN_FAKE_DISCONNECT_SENSOR=0;CONFIG_MERLIN_FAKE_DISCONNECT_AFTER_SAMPLES=3;CONFIG_MERLIN_FAKE_DISCONNECT_FOR_ACTIVATIONS=10",
+    "evidence": "one sensor degrades and recovers while the other remains healthy"
+  },
+  {
+    "name": "stale-failsafe",
+    "target": "esp32",
+    "configuration": "CONFIG_MERLIN_FAKE_DISCONNECT_SENSOR=0;CONFIG_MERLIN_FAKE_DISCONNECT_AFTER_SAMPLES=3;CONFIG_MERLIN_FAKE_DISCONNECT_FOR_ACTIVATIONS=0",
+    "evidence": "cached sample ages and actuator reaches declared failsafe"
+  },
+  {
+    "name": "deadline-skip",
+    "target": "esp32",
+    "configuration": "CONFIG_MERLIN_INJECT_SLOW_T500=1",
+    "evidence": "RTF-002 and skip/re-anchor while TWDT remains silent"
+  },
+  {
+    "name": "controlled-reset-safe-halt",
+    "target": "esp32",
+    "configuration": "CONFIG_MERLIN_INJECT_SLOW_T500=5",
+    "evidence": "failsafe-first reset forensics and five-reset SAFE_HALT"
+  }
+]

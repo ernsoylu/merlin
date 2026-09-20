@@ -1,0 +1,16 @@
+{
+  "schemaVersion":"2.2.0",
+  "generatorVersion":"0.1.0",
+  "reference":"v01-reference",
+  "project":{"name":"climate-demo","version":"0.1.0"},
+  "target":{"ecu":"esp32","soc":"soc/esp32.json","module":"modules/esp32-wroom-32.json","board":"devkits/devkit-hw394.json","overlays":[],"sdk":{"family":"esp-idf","version":"5.2.3"},"radio":{"wifi":false,"bt":false}},
+  "modules":["Mcu","Port","Dio","I2c","Pwm","Wdg","Os","EcuM","Det","Hm","Log"],
+  "buses":{"I2C0":{"type":"i2c","speedHz":100000,"pins":{"sda":"IO21","scl":"IO22"}}},
+  "instances":{"devices":[{"instance":"ambientSensor","type":"bme280","bus":"I2C0","address":"0x76","provider":"simulation"},{"instance":"enclosureSensor","type":"bme280","bus":"I2C0","address":"0x77","provider":"simulation"}],"swcs":[{"instance":"cabinController","type":"ClimateController"}],"iohwab":[{"instance":"fan","type":"PwmChannel","interface":"PwmDutyCycle","pin":"IO2","timer":0,"channel":0,"frequencyHz":25000}]},
+  "tasks":[{"name":"T10","periodMs":10,"deadlineMs":2,"priority":18,"core":0},{"name":"T100","periodMs":100,"deadlineMs":10,"priority":14,"core":0},{"name":"T500","periodMs":500,"deadlineMs":20,"priority":10,"core":0}],
+  "runnableMap":{"T10":["ambientSensor.MainFunction_High","enclosureSensor.MainFunction_High"],"T100":["cabinController.Run_100ms","fan.Run_100ms"],"T500":["ecum.MainFunction_500ms","hm.MainFunction_500ms","log.Drain"]},
+  "connections":[{"from":"ambientSensor.Env","to":"cabinController.Ambient"},{"from":"enclosureSensor.Env","to":"cabinController.Enclosure"},{"from":"cabinController.FanOut","to":"fan.Duty"}],
+  "supervision":{"deadlineChecks":true,"twdt":{"timeoutS":5,"feed":"per-activation","subscribeAfterGate":true},"debounce":{"failedCyclesToSet":3,"passedCyclesToHeal":5}},
+  "qualification":{"status":"target-tested","physicalGaps":["HW-394 pull-ups and reset-window electrical idle levels"]},
+  "acknowledgedWarnings":[{"id":"VAL-003","object":"fan","configHash":"2a60b534ad383b85a3990f855607ae36d272bf342b2a609bd70e83d725ed2a80"},{"id":"VAL-003","object":"statusLed","configHash":"9d8a527b8e9f27fac91e2ecf1af3c511503746b7410c580d679512c050959e89"}]
+}

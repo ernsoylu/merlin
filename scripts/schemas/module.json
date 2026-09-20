@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlin.local/schema/module-2.2.0.json",
+  "title": "Merlin module manifest",
+  "type": "object",
+  "required": ["schemaVersion", "module"],
+  "properties": { "schemaVersion": { "const": "2.2.0" }, "module": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } }, "additionalProperties": true } },
+  "additionalProperties": true
+}

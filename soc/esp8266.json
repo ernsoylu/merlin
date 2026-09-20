@@ -1,0 +1,4 @@
+{
+  "schemaVersion":"2.2.0",
+  "soc": {"name":"ESP8266EX", "cores":1, "qualification":"target-tested", "peripherals":{"i2c":{"instances":1},"spi":{"instances":["CSPI","HSPI"]},"uart":{"instances":2},"adc":{"channels":["TOUT"],"vddCalibrationDependent":true},"pwm":{"groups":1},"rmt":{"supported":false},"bluetooth":{"supported":false}}}
+}

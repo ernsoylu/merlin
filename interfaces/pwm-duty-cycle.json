@@ -1,0 +1,1 @@
+{"schemaVersion":"2.2.0","interface":{"name":"PwmDutyCycle","version":"1.0.0","kind":"state","elements":[{"name":"dutyPermille","type":"uint16","range":[0,1000]}]}}

@@ -1,0 +1,1 @@
+{"schemaVersion":"2.2.0","interface":{"name":"DioLevel","version":"1.0.0","kind":"state","elements":[{"name":"level","type":"enum","values":["low","high"]}]}}

@@ -1,0 +1,1 @@
+{"schemaVersion":"2.2.0","interface":{"name":"MonochromeFrame","version":"1.0.0","kind":"state","elements":[{"name":"width","type":"uint16"},{"name":"height","type":"uint16"},{"name":"pixels","type":"static-bytes","length":1024}],"metadata":["sequence","quality"]}}

@@ -1,0 +1,1 @@
+{"schemaVersion":"2.2.0","interface":{"name":"HealthReport","version":"1.0.0","kind":"state","elements":[{"name":"health","type":"enum","values":["UNINIT","READY","DEGRADED"]}],"metadata":["sequence","sampleTimeUs"]}}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "2.2.0",
+  "driverType": {"name":"bme280", "version":"2.1.0", "multipleInstances":true, "qualification":"deferred", "simulationProvider":true},
+  "requiresModules": ["I2c"],
+  "bus": {"requires":"i2c", "addressSelection":{"type":"strap", "options":["0x76","0x77"]}, "maxSpeedHz":100000},
+  "provides": [{"port":"Env", "interface":"EnvironmentalData", "interfaceVersion":"^1.1.0"}],
+  "executionContract": {"cpuUs":300, "maxElapsedMs":3, "transactionTimeoutMs":2, "recovery":{"budgetUs":400,"afterConsecutiveFails":3,"cooldownActivations":10}},
+  "initPolicy": {"onFailure":"degradable"}
+}

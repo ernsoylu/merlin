@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlin.local/schema/driver-2.2.0.json",
+  "title": "Merlin driver manifest",
+  "type": "object",
+  "required": ["schemaVersion", "driverType"],
+  "properties": { "schemaVersion": { "const": "2.2.0" }, "driverType": { "type": "object", "required": ["name", "version"], "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "qualification": { "enum": ["qualified", "target-tested", "implemented", "deferred", "unsupported"] } }, "additionalProperties": true } },
+  "additionalProperties": true
+}

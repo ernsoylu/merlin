@@ -1,0 +1,1 @@
+{"schemaVersion":"2.2.0","module":{"name":"ESP32-WROOM-32","qualification":"target-tested","blockedPins":{"IO6":"SPI flash","IO7":"SPI flash","IO8":"SPI flash","IO9":"SPI flash","IO10":"SPI flash","IO11":"SPI flash","IO37":"not bonded out","IO38":"not bonded out"}}}

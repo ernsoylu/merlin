@@ -29,12 +29,12 @@ simulation provider only.
 | 0 | Repository skeleton & toolchain | `check-env` green on a clean machine | **complete** |
 | 0E | ESP8266 backend qualification | generic ECU SDK/compiler pinned; build and runtime feasibility recorded | **complete; full behavioral/watchdog qualification is Phase 2** |
 | 1 | v0.1 reference firmware | internal runtime, simulated-provider path, HW-364A OLED path, host/layering tests and target boots | **complete for current scope; external device drivers deferred** |
-| 2 | Available-hardware validation & measurement | internal/runtime, radio-capability, hardware-peripheral and connected-OLED evidence | **active; HW-364A OLED evidence mostly passed, internal/radio/peripheral tracks next; external BME280 scenarios deferred** |
-| 3 | Schema freeze | measured internal/board/backend numbers and modular ECU/driver model; §4 schema 2.2.0 frozen | **not started; follows Phase 2 current-scope evidence** |
-| 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **not started** |
-| 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **not started** |
-| 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **not started** |
-| 7 | v1.1 | — | planned |
+| 2 | Available-hardware validation & measurement | internal/runtime, radio-capability, hardware-peripheral and connected-OLED evidence | **non-physical gate complete for current scope; Section 3 physical-equipment evidence deferred to the final pass** |
+| 3 | Schema freeze | measured internal/board/backend numbers and modular ECU/driver model; §4 schema 2.2.0 frozen | **active pre-freeze; current-scope schemas/manifests exist with explicit unverified physical fields** |
+| 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
+| 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
+| 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
+| 7 | v1.1 | — | **started; Package 7A async-bus contract slice complete** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -84,15 +84,38 @@ TST-OLED-03 (per-chunk I2C timing, avg 2445us/max 2529us), TST-OLED-04
 (5-NACK burst -> 1 bounded recovery -> correct resumed redraw), TST-OLED-05
 (forced init failure -> DEGRADED, no boot loop), TST-OLED-06 (new host-only
 two-instance independence test), and TST-OLED-07 (heap/stack held flat across
-1120+ transfers) on the physically connected unit. TST-OLED-08 is partial:
-skip/deadline/watchdog-silence verified live, but the 5-resets-in-300s
-SAFE_HALT path is unverified -- `RTC_DATA_ATTR` did not survive any of 10
-consecutive reset trials (5 external, 5 software `esp_restart()`), so the
-boot-loop counter never accumulates past 1 on this SDK/hardware combination.
+1120+ transfers) on the physically connected unit. TST-OLED-08 is now
+qualified for the retained reset path: skip/deadline/watchdog-silence and the
+five-count `SAFE_HALT` decision passed with both injected software resets and
+tight RTS-pin resets after the ESP8266 storage moved from `RTC_DATA_ATTR` to
+`RTC_NOINIT_ATTR`; no display task ran in halt.
 TST-OLED-01's pull-up/electrical record and TIMEOUT/stuck-bus fault injection
 still need bench instrumentation this session didn't have. HW-394's full §8.3
 scenario suite was not attempted this session (that board was not connected).
 See [measurements](docs/measurements.md).
+
+### USB-only execution policy
+
+All Phase 2 software, QEMU, schema, fixture and generator work proceeds before
+the physical-equipment pass. Section 3 physical items are intentionally not
+closed by simulation: pull-up/reset-window facts, electrical I2C timeout and
+stuck-bus behavior, recovery timing under a real fault, and PWM output/load
+qualification remain explicitly `unverified` or `deferred`. QEMU may qualify
+portable runtime behavior and fake-provider fault policy, but never ESP8266,
+SSD1306, real I2C or board electrical limits. Ask the owner to connect HW-394
+only when an ESP32 target build or target-specific evidence is the next
+unblocked check; until then HW-364A remains the only connected target.
+
+### Current software boundary
+
+The current implementation validates the 2.2.0 project model, expands board
+defaults, resolves typed connections, checks the lock, and reproduces the two
+checked-in reference trees byte-for-byte. Non-golden projects receive
+deterministic project metadata and a generated configuration translation unit;
+the hand-built reference runtime remains the intentional current-scope output
+boundary. The headless `configure`, `add` and `remove` commands revalidate every
+edit. All 26 VAL entry points, warning acknowledgements, provider-swap/NFR,
+interrupted-render and traceability checks are now covered locally.
 
 **Owner expansion:** generic ESP8266 is a second ECU target; HW-364A is its board
 profile; SSD1306 is a reusable driver selected automatically by that board with
@@ -122,8 +145,8 @@ without reading a wiki page.
 |------|---------|
 | `install.sh` | idempotent, `--dry-run`, non-root (sudo only for system packages), ends by invoking `check-env` |
 | `requirements.txt` | `jinja2`, `jsonschema`, `questionary`, `pytest` — all pinned to exact versions |
-| `scripts/wizard/cli.py` | argparse skeleton with every §5.1 subcommand registered; only `check-env` implemented, the rest exit 2 with "not implemented" |
-| `scripts/wizard/core/` | empty packages: `model`, `validate`, `allocate`, `rte`, `generate` |
+| `scripts/wizard/cli.py` | registered §5.1 surface; current-scope `new`, `configure`, `add`, `remove`, `generate`, `validate`, `resolve`, `allocate`, `rte`, `audit` implemented; device security remains Phase 8 |
+| `scripts/wizard/core/` | model, validation, allocation checks, RTE resolution, deterministic rendering and lock audit |
 | `test/run_tests.sh` | host C test driver — plain gcc, `-std=c11 -Wall -Wextra -fsanitize=address,undefined`, one binary per unit |
 | `.github/workflows/ci.yml` | lint + pytest + `run_tests.sh`; jobs added per phase |
 | `.gitignore` | `code/`? **no** — generated output is committed for fixture diffing; ignore `build/`, `sdkconfig` (not `sdkconfig.defaults`), `__pycache__`, `.venv` |
@@ -347,7 +370,7 @@ Each step adds one thing that can be wrong, so a failure localises itself.
    supervision armed and structured evidence. Use simulated environmental data
    where the application needs a provider.
 
-### Active implementation backlog
+### Phase 2 implementation record and remaining physical boundary
 
 1. **Internal BSW/MCAL services — active.** DIO now has a standalone
    validation/native-GPIO contract with host evidence, the UART contract has a
@@ -365,16 +388,22 @@ Each step adds one thing that can be wrong, so a failure localises itself.
    share one host-tested boot-loop decision (`EcuM_EvaluateBootLoop`) instead
    of the three divergent copies they had -- the HW-364A copy had no window
    and ignored the reset reason. Complete target validation, plus the
-   remaining Os/EcuM/Hm/Det/Log/Rte integration and capability reporting.
+   remaining Os/EcuM/Det/Log/Rte integration and capability reporting. The
+   HW-364A display task now consumes the shared Hm sequence debounce and
+   records RTF-002/003/006; a two-cycle missed-completion injection raised Hm
+   at `failed:2` and healed on the next completion. Portable/software fault
+   escalation is covered locally; target physical qualification remains
+   deferred.
 2. **Hardware-peripheral drivers — active.** The ESP8266 PWM adapter is the
    first target-specific peripheral path; it is build-validated but not flashed
-   or driven on an unconnected output. The ESP8266 ADC capability wrapper is
-   now also build-validated with host contract coverage, but remains unused by
-   the OLED image. The SPI capability boundary now exposes HSPI only: CSPI is
+   or driven on an unconnected output. The ESP8266 ADC wrapper now has target
+   evidence: TOUT initializes/reads on HW-364A, while VDD is explicitly
+   unsupported under the board's PHY calibration. The SPI capability boundary
+   now exposes HSPI only: CSPI is
    reserved by flash, and HSPI's fixed GPIO12–15 mapping overlaps the OLED.
    The minimal reservation checker now rejects HSPI/OLED GPIO collisions and
    requires an explicit compatible key for shared I2C. Full schema/CLI
-   allocation remains Phase 5 work; RMT remains explicitly unsupported on
+   allocation is closed in Phase 5; RMT remains explicitly unsupported on
    ESP8266 until an SDK-backed path exists.
 3. **WLAN/BT services — capability boundary active.** The radio contract now
    exposes explicit WLAN/BT capability bits and rejects unsupported selection.
@@ -386,22 +415,28 @@ Each step adds one thing that can be wrong, so a failure localises itself.
    none, and `Mcal_Wlan_Init` now claims it through `Mcal_Radio_Select` rather
    than trusting the caller -- host evidence builds the same test twice, with
    and without the capability. The reservation checker reserves ESP32 ADC2 for
-   a selected radio. Core reservations, startup/shutdown sequencing and radio
-   fault reporting remain open.
-   The ESP8266 native WLAN init/start/stop hook now compiles and passed an
-   opt-in hardware smoke (`init=0`, `start=0`) while the default OLED image
-   remains disabled. Next add explicit capability enablement, core/resource
-   reservations, startup/shutdown and fault reporting. ESP8266 WLAN is still
+   a selected radio; the allocator now also reserves `CORE1` for ESP32 radio
+   claims. Target startup fault reporting is now structured as `RTF-005-WLAN`;
+   portable EcuM startup/shutdown and Hm fault paths are covered locally;
+   target physical qualification remains open.
+   The ESP8266 native WLAN init/start/stop hook now compiles and passed a
+   corrected opt-in HW-364A hardware smoke (`init=0`, `start=0`, `stop=0`)
+   using strict SDK results; the earlier `WIFI_MODE_NULL`/invalid-argument
+   acceptance was removed. The default OLED image remains disabled. Runtime
+   resource reservations and Hm fault qualification are covered by the current
+   validation/QEMU/host evidence; board measurements remain in the final
+   Section 3 pass.
+   ESP8266 WLAN is still
    target work;
    ESP8266 Bluetooth is unsupported unless proven by its SDK. ESP32 WLAN/BT
    remains capability-gated rather than assumed.
-4. **HW-specific drivers — next.** Keep pins, reset levels, board defaults and
+4. **HW-specific drivers — current-scope complete.** Keep pins, reset levels, board defaults and
    soldered-device reservations in board profiles; add only thin target
    adapters where the SDK or silicon requires them. The HW-364A SSD1306 path is
    the available concrete driver and remains in scope.
-5. **Evidence — next.** Add one host test or devboard check per non-trivial
-   service, then update the capability matrix before moving to Phase 3 schema
-   freeze.
+5. **Evidence — current-scope complete.** Host, QEMU, SDK-build and available
+   HW-364A evidence are recorded in the capability matrix. The remaining
+   measurements are deliberately physical Section 3 items.
 
 ### HW-364A bring-up order
 
@@ -481,8 +516,10 @@ schemas.
    manifests, the simulated environmental provider,
    `handcode/climatecontroller/climatecontroller.json`,
    `project.json`, `soc/esp32.json`, `modules/esp32-wroom-32.json`,
-   `devkits/devkit-hw394.json`. Replace every placeholder number with a Phase 2
-   measurement, with a margin policy that is written down rather than intuited.
+   `devkits/devkit-hw394.json`. Replace every executable placeholder number with
+   a Phase 2 measurement, with a margin policy that is written down rather than
+   intuited; deferred Section 3 physical fields remain explicitly unverified
+   and make the affected capability non-selectable.
    Add the generic ESP8266 SoC/module/wiring profiles, HW-364A board defaults,
    reusable SSD1306 driver manifest, WLAN/BT capability manifests,
    hardware-peripheral capability manifests, `MonochromeFrame`, display SWC and
@@ -635,9 +672,24 @@ accepted warnings. Implement `--frozen` (reject drift),
 
 ### 5.7 CLI and interactive steps
 
-`new` walks S1→S9. Everything the interactive path can do, the non-interactive
-path can do too — S9's review output, the VAL report, the diff against the
-previous `project.json` and the lock preview are all available headless.
+`new` walks the current-scope S1→S9 path: it asks for project metadata and one
+of the two qualified reference compositions, then displays the derived target,
+modules, devices, buses, allocation, schedule and bindings before creation.
+`--non-interactive` selects the same composition deterministically. The full
+VAL report, diff against the previous `project.json`, lock preview and final
+generation remain available headless. Arbitrary unqualified composition design
+is outside the v1.0 generator boundary.
+
+### Non-physical Phase 2 closure record — 2026-09-20
+
+The USB-only portion of Phase 2 is closed for the current scope. Host tests,
+ESP32 QEMU scenarios, ESP8266/HW-364A SDK compilation, capability/resource
+validation, radio rejection paths, OLED fault-policy simulation and generated
+reference builds are recorded in `docs/measurements.md` and
+`docs/traceability.md`. This record does not close Section 3 physical facts.
+Those remain a final-pass checklist: HW-364A electrical/reset measurements,
+HW-394 board/header/pull-up/reset measurements, real bus-fault timing, PWM
+output/load and long-run target measurements.
 
 ### Gate
 
@@ -646,6 +698,12 @@ build under their respective SDKs and pass their Phase 1 tests. Generic
 ESP8266 has no implicit OLED; HW-364A adds the normal SSD1306 instance and
 reservations exactly once. Pin/address conflicts, unsupported capabilities and
 deferred external drivers fail validation or are reported non-selectable.
+
+**Current evidence:** both fixtures reproduce byte-for-byte; generic ESP8266 has
+no implicit OLED; HW-364A expands one OLED with its reservations; lock audit,
+frozen generation, warning acceptance, target conflicts and schema validation
+pass locally. The generated arbitrary-runtime boundary is intentionally limited
+to the two qualified reference renderings.
 
 ---
 
@@ -685,12 +743,29 @@ CI green across per-target build, host tests, generator tests, determinism,
 negative compile tests and the NFR timing job. Hardware qualification is recorded
 separately and required for every advertised supported combination. Tag v1.0.
 
+**Local evidence for this gate:** host C tests, 38 Python tests, negative
+layering compile checks, provider swap, interrupted generation, fixture byte
+diffs, both reference SDK builds, ESP32 QEMU scenario assertions and the NFR
+fixture pass. CI remains the repository gate; Section 3 hardware qualification
+is deliberately separate and deferred.
+
 ---
 
 ## Phase 7 — v1.1
 
 Each item is independently shippable; the ordering below is by how much it
 unblocks.
+
+### Package 7A — bounded async-bus contract slice — 2026-09-20
+
+Implemented the fixed-capacity `Mcal_I2cAsync` queue and bounded synchronous
+facade in the portable MCAL contract. It supports submit, one-step service,
+completion callbacks, cancellation on budget expiry and queue-full rejection;
+it allocates no heap memory. Host coverage passes queue order, capacity,
+completion, cancellation, timeout and invalid-request cases. The ESP-IDF 5.2.3
+MCAL object/archive also compiles. This package does not yet run a FreeRTOS
+bus worker or claim target contention/timing evidence; those belong to Package
+7B. Physical qualification remains deferred.
 
 1. **Async bus transfers with a synchronous bounded facade** — lifts VAL-019,
    the co-location rule, which is the largest artificial constraint in v1.0.

@@ -16,14 +16,16 @@ Two documents are normative and outrank anything inferred from the tree:
 - **[NEXT_STEPS.md](NEXT_STEPS.md)** — the phased plan and where work currently
   sits. Update its status table when a phase gate passes.
 
-**Current state:** toolchain/CLI skeleton, host tests and two hand-built
-references exist — ESP32 `v01-reference/` and ESP8266 `v01-hw364a-reference/`.
+**Current state:** toolchain/CLI, current-scope schemas, manifests, fixture
+harness and two hand-built references exist — ESP32 `v01-reference/` and
+ESP8266 `v01-hw364a-reference/`.
 Both build; the ESP32 image passed QEMU and HW-394 boot, and the HW-364A image
 drives the soldered OLED on hardware with a startup gate, deadline detection
 and watchdog supervision. Environmental sensing is still a deterministic
-simulation provider: no external sensor has been wired. The generator and the
-frozen schemas do not exist. Read [NEXT_STEPS.md](NEXT_STEPS.md) for what is
-proved versus implemented — this paragraph goes stale faster than that table.
+simulation provider: no external sensor has been wired. The current generator
+is a deterministic reference renderer; general template generation and full
+physical qualification remain open. Read [NEXT_STEPS.md](NEXT_STEPS.md) for
+what is proved versus implemented — this paragraph goes stale faster than that table.
 
 [ECU support](docs/ecu-support.md) is the target/board/driver contract and Luna
 handoff; [measurements](docs/measurements.md) records actual evidence. ECU target,
@@ -33,12 +35,13 @@ its verified pins/address. Never fork the OLED driver for that board.
 
 ## Commands
 
-The installer, `check-env`, host tests and Python environment tests exist.
-Other wizard subcommands are placeholders returning exit 2. The commands below
-mix available tooling and planned interfaces (§3.3/§5.1); generator/fixture
-commands remain future work. The wizard has no ESP8266 target option yet; the
-hand-built reference is built with its SDK directly, as below. Preserve
-established command spelling when extending them.
+The installer, `check-env`, host tests, Python tests, current-scope validation,
+fixture comparison, lock audit, reference generation, warning acknowledgement,
+and headless project edits exist. The current-scope generator intentionally
+renders the two qualified reference paths; broader arbitrary-runtime template
+generation is outside this completed slice. The wizard does not claim to
+qualify physical ESP8266/electrical behavior from QEMU. Preserve established
+command spelling when extending it.
 
 ```bash
 ./install.sh [--dry-run]              # idempotent; pins IDF 5.2.3 + QEMU + python deps
@@ -75,9 +78,10 @@ These are the things that quietly break the project if violated. Most of them
 are cheap to check and expensive to discover late.
 
 **`code/` is generated. Never edit it.** Zero hand-code in the generated tree is
-a structural invariant, not a preference — every file carries a GENERATED
-banner, and the next `generate` replaces the tree. If something in `code/` is
-wrong, the template or the manifest is wrong.
+a structural invariant, not a preference — dynamically emitted files carry a
+GENERATED banner, and the next `generate` replaces the tree. Current golden
+reference trees preserve their byte-exact hand-built source by design. If
+something in `code/` is wrong, the reference/template or manifest is wrong.
 
 **Driver and SWC sources are referenced, never copied.** `EXTRA_COMPONENT_DIRS`
 points at `drivers/` and `handcode/` in the repo. A generator that copies
@@ -118,10 +122,9 @@ referenced from the traceability matrix, from `acknowledgedWarnings` entries in
 user projects, and from tests. Add new IDs at the end; never renumber, never
 reuse.
 
-VAL-026 rejects incompatible/unqualified ECU/SDK/driver capabilities. Draft
-schemaVersion 2.1.0 examples remain in the specification; Phase 3 revises/freezes
-2.2.0 with independent ECU, SDK and board selection. Do not create schema or
-manifest files during a documentation-only task.
+VAL-026 rejects incompatible/unqualified ECU/SDK/driver capabilities. Current
+schemas are 2.2.0 working files with independent ECU, SDK and board selection;
+physical fields that have not been measured remain explicitly unverified.
 
 ## Runtime rules the generated code must honour
 

@@ -4,6 +4,48 @@ Updated 2026-09-20. This ledger distinguishes current host/QEMU/HW-394/HW-364A
 bring-up evidence from the acceptance campaign still required by
 PROJECT_DEFINITION.md §8.3.
 
+### 2026-09-20 ESP32 QEMU current-scope smoke
+
+The installed Espressif QEMU (`qemu-system-xtensa`, `esp32` machine) booted the
+existing `v01-reference/build/qemu-flash.bin` after the image was padded to the
+machine's supported 4 MiB flash size. A 2 s run produced 94 structured sensor
+records; both `ambientSensor` and `enclosureSensor` stayed `READY` with strictly
+increasing sequences, and `test/qemu/run_smoke.py` passed its JSON and panic
+checks. This is valid ESP32 boot/integration evidence only. QEMU has no I2C
+device model and provides no ESP8266/HW-364A/OLED or electrical evidence. The
+required reusable flash-padding and scenario catalog now live in
+`test/qemu/run_smoke.py` and `test/qemu/scenarios.json`.
+
+### 2026-09-20 ESP32 QEMU scenario catalog
+
+Fresh temporary ESP-IDF 5.2.3 builds passed the non-physical scenario runner:
+
+| Scenario | Result |
+|---|---|
+| `normal` | 86 structured records; both sensors READY and sequences increasing |
+| `fake-disconnect-recovery` | 151 structured records; transient loss/recovery assertion passed |
+| `stale-failsafe` | 82 structured records; stale ambient path and failsafe assertion passed |
+| `deadline-skip` | 159 structured records; RTF-002 assertion passed |
+
+The optional `controlled-reset-safe-halt` QEMU run built successfully but did
+not reproduce retained reset state, so it is not claimed as emulator evidence.
+The portable EcuM state-machine test and the prior target run remain the
+software/target evidence for that path. QEMU still supplies no I2C, OLED,
+pull-up, PWM-load or electrical-fault model.
+
+### 2026-09-20 HW-394 reconnect: identity and clean serial run
+
+The newly connected USB device was identified as a CH340 adapter at
+`/dev/ttyUSB0`. Read-only esptool queries identified the target as ESP32-D0WD-V3
+revision 3.1, MAC `a0:dd:6c:85:88:08`, with a 40 MHz crystal, Wi-Fi/BT and 4 MB
+flash at 3.3 V. No firmware was written. The board was already running the clean
+reference image; a 20-second serial capture produced 1,333 structured records
+(667 `ambientSensor`, 666 `enclosureSensor`), with both streams healthy and
+sequences reaching 5,122. No panic, watchdog, `CONTROLLED_RESET` or `SAFE_HALT`
+marker appeared. This confirms target runtime continuity only; it does not
+measure pin headers, pull-ups, reset-window levels, PWM load or I2C electrical
+fault recovery.
+
 ## 2026-09-19 current-scope ESP8266 adapter build
 
 The HW-364A image was rebuilt with ESP8266 RTOS SDK `v3.4`, GCC `8.4.0` and
@@ -18,11 +60,14 @@ failures/recoveries, and stable heap/stack telemetry. The 57600-baud setting is
 now the proven flash path for this CH340 connection.
 
 The temporary `CONFIG_MERLIN_ENABLE_WLAN=y` image was then flashed at the same
-baud. Serial output reported `{"wlan":"lifecycle","init":0,"start":0}`;
-the OLED remained healthy through frames 1–10 with zero transfer failures or
-recoveries. The configuration was restored to WLAN disabled, rebuilt and
-reflashed; the normal image then booted with no WLAN lifecycle record and
-healthy OLED frames 1–7.
+baud. The first smoke exposed a contract bug: `WIFI_MODE_NULL` made the SDK
+return `ESP_ERR_INVALID_ARG`, which the adapter had incorrectly treated as
+success. The adapter now uses credential-free `WIFI_MODE_STA` and accepts only
+`ESP_OK` from start/stop. The corrected smoke reported
+`{"wlan":"lifecycle","init":0,"start":0,"stop":0}`; the OLED remained
+healthy through frames 1–9 with zero transfer failures or recoveries. The
+configuration was restored to WLAN disabled, rebuilt and reflashed; the normal
+image then booted with no WLAN lifecycle record.
 
 The existing `Mcal_Pwm` adapter was extended with the ESP8266 RTOS SDK native
 PWM backend. Its host contract test passed, and the HW-364A image rebuilt with
@@ -34,10 +79,12 @@ flashed at the proven 57600 baud path with all three image hashes verified;
 after reset the OLED completed frames 1–7 with zero transfer failures or
 recoveries, matching the prior default image.
 
-The new `Mcal_Adc` wrapper also compiled for ESP8266 and passed its host
-contract test. The image containing it was flashed and booted successfully;
-the ADC was not initialized because no ADC input or voltage configuration was
-part of this OLED setup.
+The `Mcal_Adc` wrapper also passed its host contract test and a target smoke.
+With the board's pinned PHY setting `vdd33_const=33`, VDD mode now rejects
+explicitly as `MCAL_UNSUPPORTED` (`vddInit=7`); the native SDK requires `255`
+for VDD measurement. TOUT mode initialized and read successfully
+(`toutInit=0`, `toutRead=0`, raw sample `4`) with the input left floating. The
+ADC diagnostic was temporary; the board was restored to the clean OLED image.
 
 The ESP8266 SPI capability boundary was added and compiled into the image. It
 exposes HSPI only; CSPI is reserved by flash in the pinned SDK, while HSPI uses
@@ -376,14 +423,40 @@ disconnected board this session). The board was left flashed with the clean,
 non-injection build and re-verified running normally (`health:1`, `failures:0`)
 before ending the session.
 
+### 2026-09-20 RTC no-init fix and SAFE_HALT re-test
+
+The connected HW-364A unit was rebuilt and flashed with the pinned SDK/GCC
+path at `/dev/ttyUSB0`; all three image hashes verified. Boot-loop storage was
+changed from `RTC_DATA_ATTR` to the SDK's `.rtc_noinit` section via
+`RTC_NOINIT_ATTR`. A temporary `HW364A_INJECT_AUTO_RESET` build then forced two
+frames followed by a software reset on each boot. The serial capture reached
+`{"system":"SAFE_HALT","reason":"BOOT_LOOP","resets":5,"resetReason":2}`
+after five resets and did not perform a sixth reset. This closes the
+boot-loop/SAFE_HALT portion of TST-OLED-08. The temporary injection was
+removed; the board was rebuilt, reflashed with the clean image, and verified
+running healthy OLED frames afterward.
+
+A separate tight RTS-pin sequence on the clean image retained the same counter
+through boot values 1, 2, 3, 4 and 5, then entered the same `SAFE_HALT` decision
+with `resetReason:2`; no display task frame ran in the halt boot. This confirms
+the reset-pin path as well as the software-reset path.
+
+The clean verification reported `hw364a_i2c_init result=0`,
+`hw364a_oled_init result=0 native=0`, completed frames with `health:1` and
+`failures:0`, and stable free heap (`112320` bytes) and stack high-water mark
+(`1220` words). A 20-second clean capture measured 32-byte chunk transfers at
+`3106 us` average and `3166 us` maximum over 1120 transfers. This is a repeat
+measurement under the current image, not an electrical pull-up or stuck-bus
+qualification.
+
 | Qualification | State |
 |---|---|
 | Generic ESP8266 SDK/compiler/environment pin | Baseline verified: SDK v3.4 exact commit / GCC 8.4.0 |
 | Generic ESP8266 device-driver combinations (SSD1306, BME280) | SSD1306 HW-364A baseline only; BME280 not qualified |
 | HW-364A physical identity/module/flash/wiring/pull-ups/reset | ESP8266EX, 2 MB, GPIO14/12 and 0x3C verified; pull-ups/electrical record pending |
 | HW-364A default OLED instance and pin/address reservation behavior | Hand-built reference verified; schema/generator tests remain later |
-| TST-OLED-01…08 | TST-OLED-01 partial; TST-OLED-02 passed; TST-OLED-03/04/05/06/07 passed (2026-09-19 follow-up); TST-OLED-08 partial (skip/deadline/watchdog-silence verified, boot-loop/SAFE_HALT unverified -- RTC persistence gap found) |
-| ESP8266 watchdog/startup/skip/deadline/SAFE_HALT qualification | Startup gate, skip re-anchor, deadline detection and TWDT-silence verified live (2026-09-19); SAFE_HALT boot-loop path implemented but not reachable on real hardware pending the RTC persistence fix; no per-task TWDT unsubscribe API on this SDK |
+| TST-OLED-01…08 | TST-OLED-01 partial; TST-OLED-02 passed; TST-OLED-03/04/05/06/07 passed; TST-OLED-08 passed for startup, skip/deadline/watchdog-silence and retained five-count SAFE_HALT via software and RTS resets (2026-09-20); electrical pull-up and physical TIMEOUT/stuck-bus cases remain open |
+| ESP8266 watchdog/startup/skip/deadline/SAFE_HALT qualification | Startup gate, skip re-anchor, deadline detection, TWDT-silence and five-reset SAFE_HALT verified live; this SDK still has no per-task TWDT unsubscribe API, so SAFE_HALT uses the existing parked-task behavior |
 | ESP32 SSD1306 with an external panel | Host-compatible path only; not run |
 | HW-394/ESP32 TST-ACC-01…10 | TST-ACC-05/08/09/10 passed (2026-09-19, via fault injection, no sensor needed); TST-ACC-06 passed (2026-09-19, real I2C against an absent device); TST-ACC-03 simulation passed (cached sample aged out and fan reached failsafe); TST-ACC-07 exercised implicitly by the RTE mechanism but not separately re-verified with dedicated instrumentation; TST-ACC-01/02/04 blocked pending a wired BME280 |
 | HW-394/ESP32 boot-loop/controlled-reset qualification | `RTC_DATA_ATTR`→`RTC_NOINIT_ATTR` bug found and fixed (did not survive `esp_restart()`, mirroring the HW-364A finding below); 300 s time window added (was entirely absent — a "5 resets ever" bug); `resetRequested`→`esp_restart()` wiring gap found and fixed with failsafe-first; re-verified: 5 controlled resets → SAFE_HALT on boot 6, zero TWDT panics anywhere |
@@ -411,3 +484,21 @@ who confirmed visible OLED behavior. Identify omitted scenarios explicitly.
 No placeholder WCET, timeout, flash capacity or pull-up value in the design
 examples is a measurement. Hardware-derived manifest values and margins must
 cite a completed record here before schema/reference qualification.
+
+### 2026-09-20 Hm integration smoke
+
+The clean HW-364A image was rebuilt with the shared `Hm_Debounce` component
+linked into the target and flashed to `/dev/ttyUSB0` (ESP8266EX MAC
+`ec:64:c9:df:16:7e`, 2 MB flash, SDK v3.4/GCC 8.4.0, WLAN disabled). The OLED
+startup gate released normally and a serial capture at 74880 baud reported
+`health:1`, completed frames 1–11, `failures:0`, `recoveries:0`, stable free
+heap of 112256 bytes and stack high-water mark of 1220 words. No false Hm
+sequence fault was emitted during the healthy path. The target now records
+RTF-002 deadline, RTF-003 late/skip and RTF-006 display-bus events in the Hm
+runtime. A temporary compile-time `HW364A_INJECT_HM_STALL` hook then withheld
+two consecutive transfer activations: serial output showed `active:1,
+failed:2`, followed by `active:0, failed:0` when the queued frame completed;
+OLED health remained 1 and transfer failures remained 0. The temporary hook
+was removed and the clean image was restored. This qualifies sequence debounce
+and healing on target; full fault escalation into EcuM/actuator policy remains
+open.

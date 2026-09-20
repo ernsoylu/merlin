@@ -14,7 +14,7 @@ no conformance** — it reuses the methodology and the naming because they are a
 good way to keep a firmware tree from turning into a pile of globals. It is also
 not developed to ISO 26262 or IEC 61508 and carries no ASIL/SIL claim.
 
-> **Status: internal runtime implemented; devboard/OLED work is active.** The
+> **Status: current-scope runtime, schema, fixture, validation and deterministic reference-renderer work is implemented.** The
 > ESP32 image builds, passes host/QEMU checks, and has booted on HW-394. The
 > ESP8266/HW-364A image builds and has been visually verified on the connected
 > OLED. Deterministic fake sensors cover the environmental contract. Exact
@@ -188,22 +188,25 @@ python scripts/wizard/cli.py check-env
 ./test/run_tests.sh
 ```
 
-Planned generator workflow; `new` and `generate` currently exit as unimplemented:
+Current reference-renderer workflow:
 
 ```bash
 ./install.sh                      # pinned ESP-IDF 5.2.3 + QEMU + Python deps, idempotent
-python scripts/wizard/cli.py new  # interactive: S1 metadata → S9 review
+python scripts/wizard/cli.py new --non-interactive --reference climate-demo
+python scripts/wizard/cli.py validate project.json
 python scripts/wizard/cli.py generate
 cd code && idf.py build flash monitor
 ```
 
-Other commands: `validate`, `allocate`, `rte`, `resolve`, `audit`, `check-env`,
+Other commands: `configure`, `add`, `remove`, `validate`, `allocate`, `rte`, `resolve`, `audit`, `check-env`,
 `add`/`remove`, `print-schema`. Exit codes: `0` ok, `1` validation error,
 `2` environment error.
 
-ECU/board selection and ESP8266 installation/build commands will be implemented
-after backend qualification. Do not use the existing ESP32 image on HW-364A.
-The `idf.py` example above is the ESP32 output workflow.
+The guided `new` command covers the two current-scope reference compositions;
+use `--non-interactive` in scripts. ESP8266 installation remains a separate
+SDK environment from the ESP-IDF workflow above. Do not use the ESP32 image on
+HW-364A; build its native reference with the ESP8266 RTOS SDK command in
+`CLAUDE.md`.
 
 **Allocations are sticky.** `allocate` and `add` never move an assignment that
 already exists — an existing pin assignment is a constraint, not a suggestion,
@@ -218,7 +221,7 @@ behind your back.
 
 ## Validation
 
-Twenty-six planned generation-time checks (`VAL-001`…`VAL-026`) run before a line is
+Twenty-six generation-time checks (`VAL-001`…`VAL-026`) run before a line is
 emitted: resource conflicts, input-only pins, strapping pins, address
 collisions, unbound ports, tick-representable timing, interface version and
 structural compatibility, I2C rise time computed from the declared pull-up,
@@ -244,7 +247,7 @@ The full table, with severities and rationale, is
 | Layering | negative compile tests that CI requires to fail |
 | QEMU | boot and integration only — GPIO, UART, timers. **No I2C device models**; QEMU is not a driver bench |
 | Hardware | the acceptance scenarios in §8.3, which are also the measurement campaign |
-| HW-364A OLED | visible patterns/counter, bounded chunks, error recovery, frame ownership and ESP8266 supervision; all planned |
+| HW-364A OLED | visible patterns/counter, bounded chunks, error recovery, frame ownership and ESP8266 supervision; physical electrical limits remain deferred |
 
 The QEMU test SWC emits one structured JSON line per instance and the test
 asserts on the parsed structure — never on the console transcript, because

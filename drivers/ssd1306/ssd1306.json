@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "2.2.0",
+  "driverType": {
+    "name": "ssd1306", "version": "1.0.0", "description": "128x64 monochrome OLED",
+    "multipleInstances": true, "qualification": "target-tested"
+  },
+  "requiresModules": ["I2c"],
+  "bus": {"requires":"i2c", "addressSelection":{"type":"software", "default":"0x3C"}, "maxSpeedHz":100000},
+  "provides": [
+    {"port":"Frame", "interface":"MonochromeFrame", "interfaceVersion":"^1.0.0"},
+    {"port":"Health", "interface":"HealthReport", "interfaceVersion":"^1.0.0"}
+  ],
+  "executionContract": {"cpuUs": 78000, "maxElapsedMs": 550, "transactionTimeoutMs": 500, "recovery":{"budgetUs":0,"afterConsecutiveFails":3,"cooldownActivations":10}},
+  "initPolicy": {"onFailure":"degradable"},
+  "resources": {"ramBytesPerInstance":2048, "stackBytes":8192}
+}

@@ -1,6 +1,6 @@
 # ECU targets, board profiles and driver support
 
-Documentation contract for PROJECT_DEFINITION.md 2.2.0, updated 2026-09-19.
+Documentation contract for PROJECT_DEFINITION.md 2.2.0, updated 2026-09-20.
 The ESP32 reference and host-testable SSD1306/display pieces are implemented
 in `v01-reference/`; the native ESP8266/HW-364A bring-up reference is in
 `v01-hw364a-reference/`. Full physical qualification remains pending.
@@ -44,12 +44,13 @@ be rejected before generation; no empty driver stubs may count as support.
 | `ssd1306` device driver | Compatible via MCAL I2c; external wiring and panel configuration required | Compatible via MCAL I2c; explicit instance/wiring | Same driver, automatically instantiated by board defaults |
 | `bme280` device driver | Simulation/compensation path only; external transport deferred | Deferred; requires exact sensor and physical tests | Deferred external sensor; shared-bus qualification follows hardware availability |
 | Port/Dio, I2c, Uart | DIO/UART contracts added; target evidence pending | I2C baseline implemented; UART and remaining services are not qualified | Reuses generic ESP8266 services |
-| Mcu reset/reset reason | `Mcal_Mcu` maps the SDK reason to a portable code and owns `esp_restart`; builds, target evidence pending | Same adapter, same reason codes; retained boot-loop storage is still SDK-specific and unproven | Reuses generic ESP8266 adapter |
-| Boot-loop supervision | `EcuM_EvaluateBootLoop` decides on retained counter, window and reset reason; `RTC_NOINIT_ATTR` storage verified on HW-394 | Same decision; retained storage is the open part | Same decision; RTC retention did not survive any reset trial, so TST-OLED-08 stays partial |
-| Time/GPT/watchdog, Os/EcuM | GPT timebase and watchdog contracts added; target evidence pending | ESP8266 GPT/watchdog adapters are in the OLED path; qualification pending | Reuses generic ESP8266 adapters |
+| Mcu reset/reset reason | `Mcal_Mcu` maps the SDK reason to a portable code and owns `esp_restart`; builds, target evidence pending | Same adapter, same reason codes; retained boot-loop storage is still SDK-specific and unproven | Reuses generic ESP8266 adapter; software reset reason and flash path verified |
+| Boot-loop supervision | `EcuM_EvaluateBootLoop` decides on retained counter, window and reset reason; `RTC_NOINIT_ATTR` storage verified on HW-394 | Same decision; retained storage is the open part | `RTC_NOINIT_ATTR` retained five injected software resets and reached SAFE_HALT; SDK has no per-task TWDT unsubscribe |
+| Time/GPT/watchdog, Os/EcuM/Hm | GPT timebase and watchdog contracts added; target evidence pending | ESP8266 GPT/watchdog adapters are in the OLED path; qualification pending | Startup gate, GPT timing, watchdog feed, release/deadline path and shared Hm sequence integration build and run on the OLED task; two-cycle missed-completion debounce passed, full fault escalation remains open |
+| ADC | Target capability pending | TOUT/VDD contract added; VDD depends on PHY calibration | TOUT init/read smoke passed; VDD explicitly unsupported with `vdd33_const=33` |
 | Pwm/IoHwAb fan | Required by climate reference; pending | Native ESP8266 PWM adapter builds and has host contract coverage; output qualification pending | Same restriction as generic ESP8266 |
 | SPI/RMT | Target-specific qualification pending | HSPI capability only; CSPI is flash-reserved and RMT is unsupported | HSPI pins conflict with the onboard OLED |
-| WLAN/BT capability | WLAN declared and gated in `Mcal_Wlan_Init`; the ESP-IDF 5.2.3 `esp_netif` backend compiles, target evidence pending; Bluetooth is declared by no build | Same gate; native WLAN init/start/stop hook passed opt-in smoke; default disabled; Bluetooth unsupported by silicon and SDK | Same restriction as generic ESP8266 |
+| WLAN/BT capability | WLAN declared and gated in `Mcal_Wlan_Init`; the ESP-IDF 5.2.3 `esp_netif` backend compiles, target evidence pending; Bluetooth is declared by no build | Same gate; native WLAN init/start/stop passed corrected opt-in HW-364A smoke (`0/0/0`) using strict SDK results; default disabled; Bluetooth unsupported by silicon and SDK | Same restriction as generic ESP8266 |
 | Other catalog modules | Selectable only after target-specific qualification | No inheritance of ESP32 peripheral inventory | Same restriction as generic ESP8266 |
 
 SSD1306 addressing/command generation and BME280 compensation/state machines
@@ -214,13 +215,12 @@ skip/deadline detection and TWDT feed, software fault injection (NACK burst,
 forced init failure, forced software reset), and per-chunk timing/heap/stack
 instrumentation to `v01-hw364a-reference/main/user_main.c`, then exercised
 TST-OLED-03/04/05/07 and the skip/deadline/watchdog half of TST-OLED-08 on the
-physically connected unit. See
-[measurements.md](measurements.md#2026-09-19-follow-up-fault-injection-timing-and-boot-loop-evidence)
-for the full record, including a real gap found in the boot-loop/SAFE_HALT
-mechanism: `RTC_DATA_ATTR` did not survive either an external reset-pin pulse
-or a software `esp_restart()` on this SDK/hardware combination in ten
-consecutive trials, so the 5-resets-in-300s SAFE_HALT path is implemented but
-unverified as working. Keep hardware evidence separate from host mocks and
+physically connected unit. A 2026-09-20 follow-up replaced the ESP8266
+`RTC_DATA_ATTR` boot-loop storage with `RTC_NOINIT_ATTR`; five injected
+software resets then reached `SAFE_HALT` with no sixth reset, and the clean
+image was restored afterward. See
+[measurements.md](measurements.md#2026-09-20-rtc-no-init-fix-and-safe_halt-re-test)
+for the full record and the follow-up result. Keep hardware evidence separate from host mocks and
 upstream library smoke tests in [measurements.md](measurements.md).
 
 | Test | Required evidence |
@@ -232,7 +232,7 @@ upstream library smoke tests in [measurements.md](measurements.md).
 | TST-OLED-05 | Passed: init pointed at an unpopulated address on the real bus NACKed deterministically (`hw364a_oled_init result=2 native=-1`), printed `{"display":"onboardOled","health":"DEGRADED"}`, and produced zero further output over a 10 s window -- no boot loop, no false ready/frame report |
 | TST-OLED-06 | Passed (host-only): existing packing/failure/recovery coverage plus a new two-instance case in `test/host/test_ssd1306.c` proving independent sequence/health/failure counters when one instance fails and the other does not |
 | TST-OLED-07 | Passed: `esp_get_free_heap_size()` held constant (112620 B) across 1120+ chunk transfers and 39+ activations -- no drift, so the per-chunk `i2c_cmd_link_create`/`_delete` alloc/free pair (a real heap churn point, not "no allocation") is not leaking; task stack high-water mark 1260/2048 words. Task creation itself is a one-time heap allocation at boot (this SDK build has `configSUPPORT_STATIC_ALLOCATION` disabled), distinct from steady-state churn |
-| TST-OLED-08 | Partial: a direct-to-task notification startup gate, TWDT subscribe-after-gate, feed-once-per-activation, and the skip/deadline model are implemented and verified live (an injected slow activation raised a deadline fault while the 15 s TWDT stayed silent, and the following activation correctly re-anchored/skipped). The 5-resets-in-300s SAFE_HALT path is implemented but **not verified**: `RTC_DATA_ATTR` reset to 0 on every one of 10 consecutive resets tested (5 external RTS-pin pulses, 5 software `esp_restart()` calls), so the counter never accumulated past 1. This SDK also has no per-task TWDT add/delete API (unlike ESP32), so "unsubscribe in SAFE_HALT" has no direct equivalent here -- open point, not yet resolved |
+| TST-OLED-08 | Passed for the qualified reset path: the startup gate, TWDT feed-once-per-activation, skip/deadline behavior and retained five-count `SAFE_HALT` were verified with both injected software resets and tight RTS-pin resets on HW-364A (2026-09-20). The SDK has no per-task TWDT add/delete API, so SAFE_HALT parks the task |
 
 Wrong-address fault injection can test NACK without disconnecting a soldered
 panel. Electrical fault injection (TIMEOUT, stuck bus) needs a suitable bench

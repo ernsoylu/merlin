@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlin.local/schema/board-2.2.0.json",
+  "title": "Merlin board manifest",
+  "type": "object",
+  "required": ["schemaVersion", "board"],
+  "properties": { "schemaVersion": { "const": "2.2.0" }, "board": { "type": "object", "required": ["name", "ecu"], "properties": { "name": { "type": "string" }, "ecu": { "enum": ["esp32", "esp8266"] }, "qualification": { "enum": ["qualified", "target-tested", "implemented", "deferred", "unverified"] } }, "additionalProperties": true } },
+  "additionalProperties": false
+}

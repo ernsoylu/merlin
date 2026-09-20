@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlin.local/schema/soc-2.2.0.json",
+  "title": "Merlin SoC manifest",
+  "type": "object",
+  "required": ["schemaVersion", "soc"],
+  "properties": { "schemaVersion": { "const": "2.2.0" }, "soc": { "type": "object", "required": ["name", "cores", "peripherals"], "properties": { "name": { "type": "string" }, "cores": { "type": "integer", "minimum": 1 }, "peripherals": { "type": "object" } }, "additionalProperties": true } },
+  "additionalProperties": false
+}

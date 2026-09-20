@@ -1,0 +1,1 @@
+{"schemaVersion":"2.2.0","board":{"name":"Generic ESP8266","ecu":"esp8266","qualification":"target-tested","physicalStatus":"partial","onboardDevices":[],"unsupported":["Bluetooth","RMT"]}}

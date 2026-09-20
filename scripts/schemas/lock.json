@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlin.local/schema/lock-2.2.0.json",
+  "title": "Merlin project lock",
+  "type": "object",
+  "required": ["schemaVersion", "generatorVersion", "projectHash", "target", "sources"],
+  "properties": {
+    "schemaVersion": { "const": "2.2.0" }, "generatorVersion": { "type": "string" },
+    "projectHash": { "type": "string" }, "target": { "type": "object" },
+    "sources": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+    "templateVersion": { "type": "string" },
+    "acceptedWarnings": { "type": "array", "items": { "type": "object", "required": ["id", "object", "configHash"], "properties": { "id": { "type": "string", "pattern": "^VAL-[0-9]{3}$" }, "object": { "type": "string" }, "configHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }, "additionalProperties": false } }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,1 @@
+{"schemaVersion":"2.2.0","interface":{"name":"PidParams","version":"1.0.0","kind":"parameter","elements":[{"name":"Kp","type":"float32"},{"name":"Ki","type":"float32"},{"name":"Kd","type":"float32"},{"name":"outMin","type":"float32"},{"name":"outMax","type":"float32"}]}}

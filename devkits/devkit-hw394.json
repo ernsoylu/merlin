@@ -1,0 +1,1 @@
+{"schemaVersion":"2.2.0","board":{"name":"HW-394","ecu":"esp32","qualification":"target-tested","physicalStatus":"partial","consoleReservation":"UART0@IO1/IO3","onboardDevices":[{"instance":"statusLed","type":"dio","pin":"IO2","idleLevel":"low"}],"buses":{"I2C0":{"pins":{"sda":"IO21","scl":"IO22"},"pullups":{"present":null,"valueOhms":null,"source":"unverified"}}}}}

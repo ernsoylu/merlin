@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlin.local/schema/swc-2.2.0.json",
+  "title": "Merlin SWC manifest",
+  "type": "object",
+  "required": ["schemaVersion", "swcType"],
+  "properties": { "schemaVersion": { "const": "2.2.0" }, "swcType": { "type": "object", "required": ["name", "version"], "properties": { "name": { "type": "string" }, "version": { "type": "string" } }, "additionalProperties": true } },
+  "additionalProperties": true
+}

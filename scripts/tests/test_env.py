@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.wizard import cli  # noqa: E402
 from scripts.wizard.core import env  # noqa: E402
+from scripts.wizard.core.validate import validate_manifest  # noqa: E402
 
 
 def test_toolchain_env_parses_and_pins_idf():
@@ -44,9 +45,9 @@ def test_requirements_are_all_exactly_pinned():
             assert "==" in line, f"unpinned requirement: {line}"
 
 
-def test_unimplemented_commands_exit_with_env_error(capsys):
-    assert cli.main(["generate"]) == cli.ENV_ERROR
-    assert "not implemented" in capsys.readouterr().err
+def test_generate_missing_project_is_a_validation_error(capsys):
+    assert cli.main(["generate"]) == cli.VALIDATION_ERROR
+    assert "generate:" in capsys.readouterr().err
 
 
 def test_every_spec_command_is_registered():
@@ -55,3 +56,51 @@ def test_every_spec_command_is_registered():
     parser = cli.build_parser()
     action = next(a for a in parser._actions if a.dest == "command")
     assert set(action.choices) == set(cli.COMMANDS) | {"check-env"}
+
+
+def test_current_scope_manifests_validate():
+    root = Path(__file__).resolve().parents[2]
+    assert validate_manifest(root / "interfaces/monochrome-frame.json", "interface") == []
+    assert validate_manifest(root / "drivers/ssd1306/ssd1306.json", "driver") == []
+    assert validate_manifest(root / "devkits/devkit-hw364a.json", "board") == []
+
+
+def test_current_schema_catalog_and_manifests_validate():
+    root = Path(__file__).resolve().parents[2]
+    kinds = {path.stem: path for path in (root / "scripts/schemas").glob("*.json")}
+    assert set(kinds) == {"project", "lock", "interface", "driver", "swc", "soc", "module", "board", "overlay"}
+    for path in root.glob("interfaces/*.json"):
+        assert validate_manifest(path, "interface") == []
+    for path in root.glob("drivers/*/*.json"):
+        assert validate_manifest(path, "driver") == []
+    for path in root.glob("handcode/*/*.json"):
+        assert validate_manifest(path, "swc") == []
+    for path in root.glob("soc/*.json"):
+        assert validate_manifest(path, "soc") == []
+    for path in root.glob("modules/*.json"):
+        assert validate_manifest(path, "module") == []
+    for path in root.glob("devkits/*.json"):
+        assert validate_manifest(path, "board") == []
+
+
+def test_new_writes_a_current_scope_project(tmp_path, capsys):
+    output = tmp_path / "project.json"
+    assert cli.main(["new", "--reference", "hw364a-oled-demo", "--output", str(output)]) == cli.OK
+    assert '"reference":"v01-hw364a-reference"' in output.read_text()
+    assert "created:" in capsys.readouterr().out
+
+
+def test_headless_edit_commands_preserve_valid_project(tmp_path):
+    source = Path(__file__).resolve().parents[2] / "scripts/tests/fixtures/01-hw364a-oled-demo/project.json"
+    project = tmp_path / "project.json"
+    project.write_bytes(source.read_bytes())
+    original_device = __import__("json").loads(project.read_text())["instances"]["devices"][0].copy()
+    assert cli.main(["add", str(project), "module", "Spi"]) == cli.OK
+    assert cli.main(["add", str(project), "device", "spareOled", "ssd1306", "bus=I2C0", "address=0x3D"]) == cli.OK
+    assert cli.main(["configure", str(project), "--set", "project.version=0.2.0"]) == cli.OK
+    assert cli.main(["remove", str(project), "device", "spareOled"]) == cli.OK
+    data = __import__("json").loads(project.read_text())
+    assert data["project"]["version"] == "0.2.0"
+    assert "Spi" in data["modules"]
+    assert all(item["instance"] != "spareOled" for item in data["instances"]["devices"])
+    assert data["instances"]["devices"][0] == original_device

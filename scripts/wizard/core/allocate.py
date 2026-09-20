@@ -1,5 +1,7 @@
 """Small resource checks shared by the future allocation stage."""
 
+from .model import resource_claims
+
 
 HW364A_FIXED_CLAIMS = (
     {"resource": "GPIO12", "owner": "onboardOled"},
@@ -14,8 +16,8 @@ HW364A_SPI_RESOURCES = {
 # ADC2 on ESP32 is wired through the radio: selecting a radio reserves it, and
 # a converter claim that survives that is a reading the radio can corrupt.
 ESP32_RADIO_RESOURCES = {
-    "WLAN": ("ADC2",),
-    "BT": ("ADC2",),
+    "WLAN": ("ADC2", "CORE1"),
+    "BT": ("ADC2", "CORE1"),
 }
 
 
@@ -62,3 +64,16 @@ def validate_hw364a_claims(claims):
 def validate_esp32_claims(claims):
     """Check user claims against ESP32 resources a selected radio consumes."""
     return find_conflicts(_expand(claims, (), ESP32_RADIO_RESOURCES))
+
+
+def validate_target_claims(model):
+    """Apply only the reservations belonging to the selected ECU and board."""
+    claims = model.get("claims") if isinstance(model, dict) else model
+    if isinstance(model, dict) and "project" in model:
+        claims = resource_claims(model)
+        target = model["project"].get("target", {})
+        if target.get("ecu") == "esp32":
+            return validate_esp32_claims(claims)
+        if model["manifests"]["board"]["data"].get("board", {}).get("name") == "HW-364A":
+            return find_conflicts(_expand(claims, (), HW364A_SPI_RESOURCES))
+    return find_conflicts(claims or ())

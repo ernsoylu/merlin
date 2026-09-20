@@ -1,0 +1,7 @@
+{
+  "schemaVersion":"2.2.0",
+  "swcType":{"name":"ClimateController","version":"1.0.0","multipleInstances":true,"callingConvention":"context-pointer"},
+  "ports":{"requires":[{"port":"Ambient","interface":"EnvironmentalData","interfaceVersion":"^1.1.0","access":"implicit","maxAgeMs":150},{"port":"Enclosure","interface":"EnvironmentalData","interfaceVersion":"^1.1.0","access":"implicit","maxAgeMs":150}],"provides":[{"port":"FanOut","interface":"PwmDutyCycle","interfaceVersion":"^1.0.0"}]},
+  "runnables":[{"name":"Init","symbol":"ClimateController_Init","trigger":"init"},{"name":"Run_100ms","symbol":"ClimateController_Run_100ms","trigger":"periodic","cycleMs":100,"wcetUs":400}],
+  "resources":{"ramBytes":128,"stackBytes":3072}
+}

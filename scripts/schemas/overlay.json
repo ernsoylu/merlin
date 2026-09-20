@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlin.local/schema/overlay-2.2.0.json",
+  "title": "Merlin board overlay",
+  "type": "object",
+  "required": ["schemaVersion", "overlay"],
+  "properties": { "schemaVersion": { "const": "2.2.0" }, "overlay": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } }, "additionalProperties": true } },
+  "additionalProperties": false
+}

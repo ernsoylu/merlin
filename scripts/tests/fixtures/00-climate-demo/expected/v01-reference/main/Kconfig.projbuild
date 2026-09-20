@@ -1,0 +1,64 @@
+menu "Merlin reference"
+
+config MERLIN_FAKE_SENSORS
+    bool "Use deterministic fake BME280 transport"
+    default y
+    help
+        Enables the QEMU/reference path. Set false for a wired sensor bench.
+
+config MERLIN_FAKE_DISCONNECT_SENSOR
+    int "Fake sensor to disconnect (-1 = none, 0 = ambient, 1 = enclosure)"
+    range -1 1
+    default -1
+    depends on MERLIN_FAKE_SENSORS
+    help
+        Makes the selected fake sensor NACK after the configured number of
+        completed samples. The other fake sensor continues normally.
+
+config MERLIN_FAKE_DISCONNECT_AFTER_SAMPLES
+    int "Completed samples before fake disconnect (0 = disabled)"
+    range 0 100000
+    default 0
+    depends on MERLIN_FAKE_SENSORS
+    help
+        Used with MERLIN_FAKE_DISCONNECT_SENSOR to exercise a mid-run sensor
+        loss without physical hardware.
+
+config MERLIN_FAKE_DISCONNECT_FOR_ACTIVATIONS
+    int "Fake disconnect duration in activations (0 = persistent)"
+    range 0 100000
+    default 0
+    depends on MERLIN_FAKE_SENSORS
+    help
+        Automatically restores the selected fake sensor after this many
+        failed start attempts, allowing recovery-path simulation.
+
+config MERLIN_I2C_SDA_GPIO
+    int "Reference I2C SDA GPIO"
+    range 0 39
+    default 21
+
+config MERLIN_I2C_SCL_GPIO
+    int "Reference I2C SCL GPIO"
+    range 0 39
+    default 22
+
+config MERLIN_FAN_GPIO
+    int "Reference fan PWM GPIO"
+    range 0 39
+    default 2
+
+config MERLIN_INJECT_SLOW_T500
+    int "Inject N slow T500 activations (fault-injection test, 0 = disabled)"
+    range 0 20
+    default 0
+    help
+        When nonzero, the first N activations of T500 sleep long enough to
+        miss their own deadline and skip the next release, exercising
+        RTF-002 and the skip/re-anchor path. At N>=5 within one boot this
+        also drives EcuM's controlled-reset path; since the setting persists
+        across the resulting esp_restart(), N>=5 repeats the cycle on every
+        boot until EcuM's RTC boot-loop counter reaches SAFE_HALT. Leave at
+        0 for normal reference operation.
+
+endmenu

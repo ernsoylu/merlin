@@ -58,3 +58,14 @@ def test_esp32_adc1_is_unaffected_by_the_radio():
         )
         == []
     )
+
+
+def test_esp32_radio_reserves_core_one():
+    assert validate_esp32_claims(
+        [
+            {"resource": "WLAN", "owner": "wlan0"},
+            {"resource": "CORE1", "owner": "controlTask"},
+        ]
+    ) == [
+        {"resource": "CORE1", "owners": ("wlan0", "controlTask")}
+    ]

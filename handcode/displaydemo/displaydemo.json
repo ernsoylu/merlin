@@ -1,0 +1,7 @@
+{
+  "schemaVersion":"2.2.0",
+  "swcType": {"name":"DisplayDemo", "version":"1.0.0", "multipleInstances":false, "callingConvention":"context-pointer"},
+  "ports": {"provides":[{"port":"DisplayOut","interface":"MonochromeFrame","interfaceVersion":"^1.0.0"}]},
+  "runnables":[{"name":"Run","symbol":"DisplayDemo_Run","trigger":"periodic","cycleMs":600}],
+  "resources":{"ramBytes":1024,"stackBytes":2048}
+}

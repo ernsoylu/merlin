@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "2.2.0",
+  "interface": {
+    "name": "EnvironmentalData", "version": "1.1.0", "kind": "sample-group",
+    "elements": [
+      {"name": "Temperature", "type": "float32", "unit": "degC", "range": [-40.0, 85.0]},
+      {"name": "Humidity", "type": "float32", "unit": "%RH", "range": [0.0, 100.0]},
+      {"name": "Pressure", "type": "float32", "unit": "Pa", "range": [30000.0, 110000.0]}
+    ],
+    "metadata": ["qualityPerElement", "sampleTimeUs", "sequence"]
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "schemaVersion":"2.2.0",
+  "soc": {"name":"ESP32", "cores":2, "qualification":"target-tested", "strappingPins":["IO0","IO2","IO5","IO12","IO15"], "inputOnlyPins":{"pins":["IO34","IO35","IO36","IO37","IO38","IO39"],"internalPullups":false}, "peripherals":{"i2c":{"instances":2},"spi":{"instances":["SPI0","SPI1","SPI2","SPI3"]},"uart":{"instances":3},"adc":{"units":2,"adc2SharedWithRadio":true},"ledc":{"groups":[{"name":"high","channels":4,"timers":4},{"name":"low","channels":4,"timers":4}]},"rmt":{"channels":8}}}
+}

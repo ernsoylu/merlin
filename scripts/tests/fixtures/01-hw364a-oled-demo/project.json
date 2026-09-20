@@ -1,0 +1,15 @@
+{
+  "schemaVersion":"2.2.0",
+  "generatorVersion":"0.1.0",
+  "reference":"v01-hw364a-reference",
+  "project":{"name":"hw364a-oled-demo","version":"0.1.0"},
+  "target":{"ecu":"esp8266","soc":"soc/esp8266.json","module":"modules/esp8266ex.json","board":"devkits/devkit-hw364a.json","overlays":[],"sdk":{"family":"esp8266-rtos-sdk","version":"3.4"},"radio":{"wifi":false,"bt":false}},
+  "modules":["Mcu","Port","Dio","I2c","Uart","Gpt","Wdg","Os","EcuM","Hm","Det","Log"],
+  "buses":{"I2C0":{"type":"i2c","speedHz":100000,"pins":{"sda":"GPIO14","scl":"GPIO12"}}},
+  "instances":{"devices":[{"instance":"onboardOled","type":"ssd1306","bus":"I2C0","address":"0x3C"}],"swcs":[{"instance":"displayDemo","type":"DisplayDemo"}],"iohwab":[]},
+  "tasks":[{"name":"Display","periodMs":600,"deadlineMs":550,"priority":5,"core":0}],
+  "runnableMap":{"Display":["displayDemo.Run"]},
+  "connections":[{"from":"displayDemo.DisplayOut","to":"onboardOled.Frame"}],
+  "supervision":{"deadlineChecks":true,"twdt":{"feed":"per-activation","subscribeAfterGate":true},"debounce":{"failedCyclesToSet":2,"passedCyclesToHeal":1}},
+  "qualification":{"status":"target-tested","physicalGaps":["pull-up resistance","electrical timeout/stuck-bus fault"]}
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlin.local/schema/project-2.2.0.json",
+  "title": "Merlin project",
+  "type": "object",
+  "required": ["schemaVersion", "generatorVersion", "project", "target", "modules", "instances", "tasks", "connections"],
+  "$defs": {
+    "instance": {
+      "type": "object",
+      "required": ["instance", "type"],
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "minLength": 1},
+        "bus": {"type": "string"},
+        "address": {"type": "string", "pattern": "^0x[0-9A-Fa-f]+$"},
+        "provider": {"type": "string"},
+        "pin": {"type": "string"},
+        "pins": {"type": "object", "additionalProperties": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "task": {
+      "type": "object",
+      "required": ["name", "periodMs", "deadlineMs", "priority", "core"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "periodMs": {"type": "integer", "minimum": 1},
+        "deadlineMs": {"type": "integer", "minimum": 1},
+        "phaseMs": {"type": "integer", "minimum": 0},
+        "priority": {"type": "integer", "minimum": 1, "maximum": 19},
+        "core": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "bus": {
+      "type": "object",
+      "required": ["type", "speedHz", "pins"],
+      "properties": {
+        "type": {"type": "string"},
+        "speedHz": {"type": "integer", "minimum": 1},
+        "pins": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+        "capacitancePf": {"type": "number", "exclusiveMinimum": 0},
+        "pullups": {"type": "object"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "properties": {
+    "schemaVersion": {"const": "2.2.0"},
+    "generatorVersion": {"type": "string", "minLength": 1},
+    "project": {"type": "object", "required": ["name", "version"], "properties": {"name": {"type": "string", "minLength": 1}, "version": {"type": "string", "minLength": 1}}, "additionalProperties": true},
+    "target": {
+      "type": "object",
+      "required": ["ecu", "soc", "module", "board", "sdk", "radio"],
+      "properties": {
+        "ecu": {"enum": ["esp32", "esp8266"]},
+        "soc": {"type": "string", "minLength": 1},
+        "module": {"type": "string", "minLength": 1},
+        "board": {"type": "string", "minLength": 1},
+        "overlays": {"type": "array", "items": {"type": "string"}},
+        "sdk": {"type": "object", "required": ["family", "version"], "properties": {"family": {"type": "string"}, "version": {"type": "string"}}, "additionalProperties": true},
+        "radio": {"type": "object", "required": ["wifi", "bt"], "properties": {"wifi": {"type": "boolean"}, "bt": {"type": "boolean"}}, "additionalProperties": true}
+      },
+      "additionalProperties": true
+    },
+    "modules": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "buses": {"type": "object", "additionalProperties": {"$ref": "#/$defs/bus"}},
+    "instances": {
+      "type": "object",
+      "required": ["devices", "swcs"],
+      "properties": {
+        "devices": {"type": "array", "items": {"$ref": "#/$defs/instance"}},
+        "swcs": {"type": "array", "items": {"$ref": "#/$defs/instance"}},
+        "iohwab": {"type": "array", "items": {"$ref": "#/$defs/instance"}}
+      },
+      "additionalProperties": true
+    },
+    "tasks": {"type": "array", "items": {"$ref": "#/$defs/task"}},
+    "runnableMap": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+    "connections": {"type": "array", "items": {"type": "object", "required": ["from", "to"], "properties": {"from": {"type": "string", "pattern": "^[^.]+\\.[^.]+$"}, "to": {"type": "string", "pattern": "^[^.]+\\.[^.]+$"}}, "additionalProperties": true}},
+    "supervision": {"type": "object"},
+    "acknowledgedWarnings": {"type": "array", "items": {"type": "object", "required": ["id", "object", "configHash"], "properties": {"id": {"type": "string", "pattern": "^VAL-[0-9]{3}$"}, "object": {"type": "string", "minLength": 1}, "configHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}, "additionalProperties": false}},
+    "reference": {"enum": ["v01-reference", "v01-hw364a-reference"]}
+  },
+  "additionalProperties": true
+}
