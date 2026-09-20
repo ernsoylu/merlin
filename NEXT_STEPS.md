@@ -34,7 +34,7 @@ simulation provider only.
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
-| 7 | v1.1 | — | **started; Packages 7A–7I async-bus, event-port, IRQ-task, cross-core sample, NvM, calibration/XCP, overlay, and TWAI contracts complete** |
+| 7 | v1.1 | — | **started; Packages 7A–7J async-bus, event-port, IRQ-task, cross-core sample, NvM, calibration/XCP, overlay, TWAI, and ICU contracts complete** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -846,6 +846,16 @@ paths return explicit bounded results; RX drops are counted. The ESP-IDF
 component compiles for the ESP32 target. Native TWAI controller installation,
 bit-rate/pin configuration, transceiver wiring, loopback, bus-off timing and
 physical qualification remain deferred.
+
+### Package 7J — bounded ICU/PCNT pulse-count subset — 2026-09-20
+
+Complete for the current software-only scope. `Mcal_Icu` validates a bounded
+PCNT configuration, counts rising edges through the ESP-IDF pulse-counter
+backend, supports start/stop/clear/read, and records watch-point overflow
+events. Host coverage exercises configuration rejection and unavailable-target
+behavior; the ESP32 component compiles against the installed SDK. Capture
+timing, GPIO electrical behavior, glitch-filter qualification, and physical
+pulse-source measurements remain deferred.
 
 1. **Async bus transfers with a synchronous bounded facade** — lifts VAL-019,
    the co-location rule, which is the largest artificial constraint in v1.0.

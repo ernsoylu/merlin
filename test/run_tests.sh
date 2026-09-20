@@ -12,6 +12,7 @@ INC="-I$ROOT/v01-reference/components/Std/include -I$ROOT/v01-reference/componen
 INC="$INC -I$ROOT/v01-reference/components/Mcal_Port/include -I$ROOT/v01-reference/components/Mcal_Mcu/include"
 INC="$INC -I$ROOT/v01-reference/components/Cal/include"
 INC="$INC -I$ROOT/v01-reference/components/Mcal_Twai/include"
+INC="$INC -I$ROOT/v01-reference/components/Mcal_Icu/include"
 LAYER_INC="-I$ROOT/v01-reference/components/Std/include -I$ROOT/v01-reference/components/Rte/include"
 
 # One binary per unit: a failure names the unit, and one unit's sanitizer
@@ -41,6 +42,7 @@ run mcal_i2c "$ROOT/v01-reference/components/Mcal_I2c/src/mcal_i2c.c" "$ROOT/tes
 run mcal_i2c_async "$ROOT/v01-reference/components/Mcal_I2c/src/mcal_i2c.c" "$ROOT/test/host/test_mcal_i2c_async.c"
 run cal "$ROOT/v01-reference/components/Cal/src/cal.c" "$ROOT/test/host/test_cal.c"
 run mcal_twai "$ROOT/v01-reference/components/Mcal_Twai/src/mcal_twai.c" "$ROOT/test/host/test_mcal_twai.c"
+run mcal_icu "$ROOT/v01-reference/components/Mcal_Icu/src/mcal_icu.c" "$ROOT/test/host/test_mcal_icu.c"
 run mcal_dio "$ROOT/v01-reference/components/Mcal_Dio/src/mcal_dio.c" "$ROOT/test/host/test_mcal_dio.c"
 run mcal_uart "$ROOT/v01-reference/components/Mcal_Uart/src/mcal_uart.c" "$ROOT/test/host/test_mcal_uart.c"
 run mcal_wdg "$ROOT/v01-reference/components/Mcal_Wdg/src/mcal_wdg.c" "$ROOT/test/host/test_mcal_wdg.c"
