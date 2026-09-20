@@ -76,10 +76,63 @@ static void test_environmental_freshness(void)
     assert(!Rte_EnvironmentalIsFresh(0, 1000000, 50U));
 }
 
+static void event_handler(uint32_t event, void *context)
+{
+    uint32_t *last = context;
+    *last = event;
+}
+
+static void test_event_queue(void)
+{
+    Rte_EventQueueType queue;
+    const Rte_EventQueueConfigType invalid = {
+        .burst = 0U, .serviceRate = 1U,
+        .fullPolicy = RTE_EVENT_DROP_NEWEST
+    };
+    const Rte_EventQueueConfigType config = {
+        .burst = 2U, .serviceRate = 1U,
+        .fullPolicy = RTE_EVENT_DROP_NEWEST
+    };
+    assert(Rte_EventQueueInit(&queue, &invalid) == RTE_EVENT_INVALID);
+    assert(Rte_EventQueueInit(&queue, &config) == RTE_EVENT_OK);
+    assert(Rte_EventQueueInit(0, &config) == RTE_EVENT_INVALID);
+    assert(Rte_EventQueuePush(&queue, 10U) == RTE_EVENT_OK);
+    assert(Rte_EventQueuePush(&queue, 11U) == RTE_EVENT_OK);
+    assert(Rte_EventQueuePending(&queue) == 2U);
+    uint32_t last = 0U;
+    assert(Rte_EventQueueService(&queue, event_handler, &last) == 1U);
+    assert(last == 10U && Rte_EventQueuePending(&queue) == 1U);
+
+    uint32_t event = 0U;
+    assert(Rte_EventQueuePush(&queue, 12U) == RTE_EVENT_OK);
+    assert(Rte_EventQueuePush(&queue, 13U) == RTE_EVENT_OK);
+    assert(Rte_EventQueuePush(&queue, 14U) == RTE_EVENT_OK);
+    assert(Rte_EventQueuePush(&queue, 15U) == RTE_EVENT_FULL);
+    assert(queue.dropped == 1U);
+    assert(Rte_EventQueuePop(&queue, &event) == RTE_EVENT_OK && event == 11U);
+    assert(Rte_EventQueuePop(&queue, &event) == RTE_EVENT_OK && event == 12U);
+    assert(Rte_EventQueuePop(&queue, &event) == RTE_EVENT_OK && event == 13U);
+    assert(Rte_EventQueuePop(&queue, &event) == RTE_EVENT_OK && event == 14U);
+    assert(Rte_EventQueuePop(&queue, &event) == RTE_EVENT_FULL);
+
+    const Rte_EventQueueConfigType dropOldest = {
+        .burst = 4U, .serviceRate = 4U,
+        .fullPolicy = RTE_EVENT_DROP_OLDEST
+    };
+    assert(Rte_EventQueueInit(&queue, &dropOldest) == RTE_EVENT_OK);
+    for (uint32_t value = 1U; value <= RTE_EVENT_QUEUE_CAPACITY; ++value) {
+        assert(Rte_EventQueuePush(&queue, value) == RTE_EVENT_OK);
+    }
+    assert(Rte_EventQueuePush(&queue, 5U) == RTE_EVENT_OK);
+    assert(queue.dropped == 1U);
+    assert(Rte_EventQueuePop(&queue, &event) == RTE_EVENT_OK && event == 2U);
+}
+
 int main(void)
 {
     test_scalar_sample();
     test_environmental_slot();
     test_environmental_freshness();
+    test_event_queue();
     return 0;
 }
