@@ -14,12 +14,13 @@ LAYER_INC="-I$ROOT/v01-reference/components/Std/include -I$ROOT/v01-reference/co
 
 # One binary per unit: a failure names the unit, and one unit's sanitizer
 # finding cannot mask another's.
+EXTRA=
 run() {
     name=$1
     shift
     printf '  %-24s' "$name"
     # shellcheck disable=SC2086
-    gcc $CFLAGS $INC -o "$OUT/$name" "$@" -lm
+    gcc $CFLAGS $INC $EXTRA -o "$OUT/$name" "$@" -lm
     "$OUT/$name"
     echo ok
 }
@@ -39,7 +40,10 @@ run mcal_uart "$ROOT/v01-reference/components/Mcal_Uart/src/mcal_uart.c" "$ROOT/
 run mcal_wdg "$ROOT/v01-reference/components/Mcal_Wdg/src/mcal_wdg.c" "$ROOT/test/host/test_mcal_wdg.c"
 run mcal_gpt "$ROOT/v01-reference/components/Mcal_Gpt/src/mcal_gpt.c" "$ROOT/test/host/test_mcal_gpt.c"
 run mcal_radio "$ROOT/v01-reference/components/Mcal_Radio/src/mcal_radio.c" "$ROOT/test/host/test_mcal_radio.c"
-run mcal_wlan "$ROOT/v01-reference/components/Mcal_Wlan/src/mcal_wlan.c" "$ROOT/test/host/test_mcal_wlan.c"
+run mcal_wlan "$ROOT/v01-reference/components/Mcal_Wlan/src/mcal_wlan.c" "$ROOT/v01-reference/components/Mcal_Radio/src/mcal_radio.c" "$ROOT/test/host/test_mcal_wlan.c"
+EXTRA="-DMERLIN_RADIO_CAPABILITIES=MCAL_RADIO_WLAN"
+run mcal_wlan_enabled "$ROOT/v01-reference/components/Mcal_Wlan/src/mcal_wlan.c" "$ROOT/v01-reference/components/Mcal_Radio/src/mcal_radio.c" "$ROOT/test/host/test_mcal_wlan.c"
+EXTRA=
 run mcal_pwm "$ROOT/v01-reference/components/Mcal_Pwm/src/mcal_pwm.c" "$ROOT/test/host/test_mcal_pwm.c"
 run mcal_adc "$ROOT/v01-reference/components/Mcal_Adc/src/mcal_adc.c" "$ROOT/test/host/test_mcal_adc.c"
 run mcal_spi "$ROOT/v01-reference/components/Mcal_Spi/src/mcal_spi.c" "$ROOT/test/host/test_mcal_spi.c"

@@ -377,6 +377,13 @@ Each step adds one thing that can be wrong, so a failure localises itself.
    `Mcal_Wlan` now selects its stack/event-loop bring-up per SDK -- ESP8266
    keeps `tcpip_adapter` and the legacy loop, ESP-IDF 5.2.3 uses `esp_netif`
    and the default loop, which is what the removed component had broken.
+   The capability bits are no longer empty on every target: a bit means the
+   build carries a backend, so WLAN is declared on both ESP targets and BT on
+   none, and `Mcal_Wlan_Init` now claims it through `Mcal_Radio_Select` rather
+   than trusting the caller -- host evidence builds the same test twice, with
+   and without the capability. The reservation checker reserves ESP32 ADC2 for
+   a selected radio. Core reservations, startup/shutdown sequencing and radio
+   fault reporting remain open.
    The ESP8266 native WLAN init/start/stop hook now compiles and passed an
    opt-in hardware smoke (`init=0`, `start=0`) while the default OLED image
    remains disabled. Next add explicit capability enablement, core/resource

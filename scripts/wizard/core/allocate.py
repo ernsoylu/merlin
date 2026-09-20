@@ -11,6 +11,13 @@ HW364A_SPI_RESOURCES = {
     "HSPI": ("GPIO12", "GPIO13", "GPIO14", "GPIO15"),
 }
 
+# ADC2 on ESP32 is wired through the radio: selecting a radio reserves it, and
+# a converter claim that survives that is a reading the radio can corrupt.
+ESP32_RADIO_RESOURCES = {
+    "WLAN": ("ADC2",),
+    "BT": ("ADC2",),
+}
+
 
 def find_conflicts(claims):
     """Return incompatible duplicate resource claims as small dictionaries."""
@@ -35,11 +42,23 @@ def find_conflicts(claims):
     return conflicts
 
 
-def validate_hw364a_claims(claims):
-    """Check user claims against the soldered OLED and fixed HSPI pins."""
-    expanded = list(HW364A_FIXED_CLAIMS)
+def _expand(claims, fixed, implied):
+    """Add the physical resources each claim drags in with it."""
+    expanded = list(fixed)
     for claim in claims:
         expanded.append(claim)
-        for resource in HW364A_SPI_RESOURCES.get(claim["resource"], ()):
+        for resource in implied.get(claim["resource"], ()):
             expanded.append({"resource": resource, "owner": claim["owner"]})
-    return find_conflicts(expanded)
+    return expanded
+
+
+def validate_hw364a_claims(claims):
+    """Check user claims against the soldered OLED and fixed HSPI pins."""
+    return find_conflicts(
+        _expand(claims, HW364A_FIXED_CLAIMS, HW364A_SPI_RESOURCES)
+    )
+
+
+def validate_esp32_claims(claims):
+    """Check user claims against ESP32 resources a selected radio consumes."""
+    return find_conflicts(_expand(claims, (), ESP32_RADIO_RESOURCES))

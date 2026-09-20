@@ -5,7 +5,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.wizard.core.allocate import find_conflicts, validate_hw364a_claims  # noqa: E402
+from scripts.wizard.core.allocate import (  # noqa: E402
+    find_conflicts,
+    validate_esp32_claims,
+    validate_hw364a_claims,
+)
 
 
 def test_hspi_conflicts_with_the_hw364a_oled_pins():
@@ -30,3 +34,27 @@ def test_i2c_share_requires_an_explicit_compatible_key():
 
 def test_free_gpio_does_not_conflict():
     assert validate_hw364a_claims([{"resource": "GPIO13", "owner": "test"}]) == []
+
+
+def test_esp32_radio_reserves_adc2():
+    conflicts = validate_esp32_claims(
+        [
+            {"resource": "WLAN", "owner": "wlan0"},
+            {"resource": "ADC2", "owner": "batterySense"},
+        ]
+    )
+    assert conflicts == [
+        {"resource": "ADC2", "owners": ("wlan0", "batterySense")}
+    ]
+
+
+def test_esp32_adc1_is_unaffected_by_the_radio():
+    assert (
+        validate_esp32_claims(
+            [
+                {"resource": "WLAN", "owner": "wlan0"},
+                {"resource": "ADC1", "owner": "batterySense"},
+            ]
+        )
+        == []
+    )

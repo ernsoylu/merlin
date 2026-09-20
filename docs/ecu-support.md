@@ -48,7 +48,7 @@ be rejected before generation; no empty driver stubs may count as support.
 | Time/GPT/watchdog, Os/EcuM | GPT timebase and watchdog contracts added; target evidence pending | ESP8266 GPT/watchdog adapters are in the OLED path; qualification pending | Reuses generic ESP8266 adapters |
 | Pwm/IoHwAb fan | Required by climate reference; pending | Native ESP8266 PWM adapter builds and has host contract coverage; output qualification pending | Same restriction as generic ESP8266 |
 | SPI/RMT | Target-specific qualification pending | HSPI capability only; CSPI is flash-reserved and RMT is unsupported | HSPI pins conflict with the onboard OLED |
-| WLAN/BT capability | Explicit capability contract; the ESP-IDF 5.2.3 `esp_netif` backend now compiles, target evidence pending | Native WLAN init/start/stop hook passed opt-in smoke; default disabled; Bluetooth remains unsupported | Same restriction as generic ESP8266 |
+| WLAN/BT capability | WLAN declared and gated in `Mcal_Wlan_Init`; the ESP-IDF 5.2.3 `esp_netif` backend compiles, target evidence pending; Bluetooth is declared by no build | Same gate; native WLAN init/start/stop hook passed opt-in smoke; default disabled; Bluetooth unsupported by silicon and SDK | Same restriction as generic ESP8266 |
 | Other catalog modules | Selectable only after target-specific qualification | No inheritance of ESP32 peripheral inventory | Same restriction as generic ESP8266 |
 
 SSD1306 addressing/command generation and BME280 compensation/state machines

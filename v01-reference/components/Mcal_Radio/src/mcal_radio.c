@@ -1,7 +1,14 @@
 #include "Mcal_Radio.h"
 
+/* A capability bit means this build has a backend for that radio, not that
+ * the silicon could in principle do it. Bluetooth is set nowhere: ESP8266 has
+ * none, and the ESP32 image has no BT backend to select. */
 #ifndef MERLIN_RADIO_CAPABILITIES
-#define MERLIN_RADIO_CAPABILITIES 0U
+#  ifdef ESP_PLATFORM
+#    define MERLIN_RADIO_CAPABILITIES MCAL_RADIO_WLAN
+#  else
+#    define MERLIN_RADIO_CAPABILITIES 0U
+#  endif
 #endif
 
 Mcal_ResultType Mcal_Radio_GetCapabilities(uint8_t *capabilities)

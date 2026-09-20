@@ -1,5 +1,15 @@
 #include "Mcal_Wlan.h"
 
+#include "Mcal_Radio.h"
+
+/* The capability gate lives here, not in each caller: an ECU whose build
+ * carries no WLAN backend must not reach the SDK at all. */
+static Mcal_ResultType claim_wlan(void)
+{
+    uint8_t selected = 0U;
+    return Mcal_Radio_Select(MCAL_RADIO_WLAN, &selected);
+}
+
 #ifdef ESP_PLATFORM
 
 #include "esp_err.h"
@@ -44,6 +54,12 @@ Mcal_ResultType Mcal_Wlan_Init(Mcal_WlanHandleType *handle)
 {
     if (handle == 0) {
         return MCAL_INVALID_ARG;
+    }
+    handle->initialized = 0U;
+    handle->started = 0U;
+    const Mcal_ResultType claim = claim_wlan();
+    if (claim != MCAL_OK) {
+        return claim;
     }
     esp_err_t error = stack_init();
     if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) {
@@ -102,7 +118,8 @@ Mcal_ResultType Mcal_Wlan_Init(Mcal_WlanHandleType *handle)
     }
     handle->initialized = 0U;
     handle->started = 0U;
-    return MCAL_HW_FAIL;
+    const Mcal_ResultType claim = claim_wlan();
+    return claim != MCAL_OK ? claim : MCAL_HW_FAIL;
 }
 
 Mcal_ResultType Mcal_Wlan_Start(Mcal_WlanHandleType *handle)
