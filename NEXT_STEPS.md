@@ -360,8 +360,12 @@ Each step adds one thing that can be wrong, so a failure localises itself.
    `Mcal_Mcu` adapter owns reset and reset-reason mapping for both backends --
    EcuM and the HW-364A main no longer call `esp_restart`/`esp_reset_reason`
    directly. Retained (RTC) boot-loop storage is still SDK-specific in BSW and
-   needs a hardware session to qualify on ESP8266. Complete target validation,
-   plus Os/EcuM/Hm/Det/Log/Rte integration and capability reporting.
+   needs a hardware session to qualify on ESP8266. EcuM is now split into a
+   portable state machine and the ESP32 climate startup, and both references
+   share one host-tested boot-loop decision (`EcuM_EvaluateBootLoop`) instead
+   of the three divergent copies they had -- the HW-364A copy had no window
+   and ignored the reset reason. Complete target validation, plus the
+   remaining Os/EcuM/Hm/Det/Log/Rte integration and capability reporting.
 2. **Hardware-peripheral drivers — active.** The ESP8266 PWM adapter is the
    first target-specific peripheral path; it is build-validated but not flashed
    or driven on an unconnected output. The ESP8266 ADC capability wrapper is

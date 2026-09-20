@@ -389,8 +389,7 @@ void EcuM_Startup(void)
      * survives esp_restart()/watchdog/brownout resets, which is what a
      * boot-loop counter needs. Its content is undefined on a true power-on,
      * so an ESP_RST_POWERON/BROWNOUT reset (or window expiry) re-arms it. */
-    static RTC_NOINIT_ATTR uint32_t bootLoopCounter;
-    static RTC_NOINIT_ATTR int64_t bootLoopWindowStartUs;
+    static RTC_NOINIT_ATTR EcuM_BootLoopType bootLoop;
     static EcuM_RuntimeType runtime;
     static Os_StackType t10Stack[2048];
     static Os_StackType t100Stack[2048];
@@ -418,24 +417,14 @@ void EcuM_Startup(void)
 
     EcuM_ContextInit(&runtime.context, 0U);
     Log_RingInit(&runtime.log);
-    runtime.context.bootLoopCounter = &bootLoopCounter;
     Mcal_McuResetReasonType resetReason = MCAL_MCU_RESET_UNKNOWN;
     (void)Mcal_Mcu_GetResetReason(&resetReason);
-    const int64_t nowUs = esp_timer_get_time();
-    const int freshWindow = resetReason == MCAL_MCU_RESET_POWERON ||
-                            resetReason == MCAL_MCU_RESET_BROWNOUT ||
-                            (nowUs - bootLoopWindowStartUs) > 300000000LL;
-    if (freshWindow) {
-        bootLoopCounter = 0U;
-        bootLoopWindowStartUs = nowUs;
-    }
-    if (bootLoopCounter >= 5U) {
-        EcuM_EnterSafeHalt(&runtime.context);
+    if (EcuM_EvaluateBootLoop(&runtime.context, &bootLoop, resetReason,
+                              esp_timer_get_time())) {
         printf("{\"system\":\"SAFE_HALT\",\"reason\":\"BOOT_LOOP\",\"resetReason\":%d}\n",
                (int)resetReason);
         return;
     }
-    bootLoopCounter++;
     const Mcal_PortPinConfigType portConfig = {
         .pin = CONFIG_MERLIN_FAN_GPIO, .output = 1U, .initialLevel = 0U
     };

@@ -3,6 +3,19 @@
 
 #include <stdint.h>
 
+#include "Mcal_Mcu.h"
+
+/* Five qualified resets inside five minutes is a boot loop, not bad luck.
+ * Both references use these; a board that needs its own gets a manifest
+ * value, not a second copy of the policy. */
+#define ECUM_BOOT_LOOP_MAX_RESETS 5U
+#define ECUM_BOOT_LOOP_WINDOW_US 300000000LL
+
+typedef struct {
+    uint32_t resets;
+    int64_t windowStartUs;
+} EcuM_BootLoopType;
+
 typedef enum {
     ECUM_STARTUP = 0,
     ECUM_RUN,
@@ -30,8 +43,9 @@ int EcuM_Release(EcuM_ContextType *context, int64_t epochUs);
 void EcuM_RecordInitFailure(EcuM_ContextType *context);
 void EcuM_RecordDeadlineFault(EcuM_ContextType *context);
 void EcuM_RecordRunActivation(EcuM_ContextType *context);
-int EcuM_CheckBootLoop(EcuM_ContextType *context, uint32_t resets,
-                       uint32_t windowMs);
+int EcuM_EvaluateBootLoop(EcuM_ContextType *context,
+                          EcuM_BootLoopType *retained,
+                          Mcal_McuResetReasonType reason, int64_t nowUs);
 void EcuM_EnterSafeHalt(EcuM_ContextType *context);
 
 void EcuM_Startup(void);

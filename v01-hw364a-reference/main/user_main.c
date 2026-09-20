@@ -10,6 +10,7 @@
 #include "rom/ets_sys.h"
 
 #include "DisplayDemo.h"
+#include "EcuM.h"
 #include "Mcal_Gpt.h"
 #include "Mcal_Mcu.h"
 #include "Mcal_I2c.h"
@@ -27,7 +28,6 @@
 #define HW364A_TASK_DEADLINE_MS 550U
 #define HW364A_TASK_JITTER_MS 50U
 #define HW364A_GOOD_FRAMES_TO_CLEAR 5U
-#define HW364A_MAX_BOOT_RESETS 5U
 /* SSD1306 pixel-data control byte, matching ssd1306_frame.c's
  * SSD1306_CONTROL_DATA; used to isolate per-chunk transfer timing (TST-OLED-03)
  * from the one-shot command burst issued during Ssd1306_Initialize. */
@@ -335,25 +335,31 @@ static void display_task(void *argument)
 
 void app_main(void)
 {
-    static RTC_DATA_ATTR uint32_t bootLoopCounter;
+    /* TST-OLED-08 is still partial here: this SDK/hardware combination did not
+     * retain RTC_DATA_ATTR across any reset trial, so the counter never
+     * accumulates. The decision itself is the shared, host-tested one; only
+     * the storage underneath it is unproven on this target. */
+    static RTC_DATA_ATTR EcuM_BootLoopType bootLoop;
+    static EcuM_ContextType ecum;
     Mcal_McuResetReasonType resetReason = MCAL_MCU_RESET_UNKNOWN;
+    int64_t nowUs = 0;
 
     (void)Mcal_Mcu_GetResetReason(&resetReason);
-
-    if (bootLoopCounter >= HW364A_MAX_BOOT_RESETS) {
+    (void)Mcal_Gpt_GetTimeUs(&nowUs);
+    EcuM_ContextInit(&ecum, 0U);
+    if (EcuM_EvaluateBootLoop(&ecum, &bootLoop, resetReason, nowUs)) {
         printf("{\"system\":\"SAFE_HALT\",\"reason\":\"BOOT_LOOP\",\"resets\":%u,\"resetReason\":%d}\n",
-               (unsigned)bootLoopCounter, (int)resetReason);
+               (unsigned)bootLoop.resets, (int)resetReason);
         return;
     }
-    bootLoopCounter++;
     printf("{\"boot\":\"start\",\"bootLoopCounter\":%u,\"resetReason\":%d}\n",
-           (unsigned)bootLoopCounter, (int)resetReason);
+           (unsigned)bootLoop.resets, (int)resetReason);
 
     /* This SDK build has configSUPPORT_STATIC_ALLOCATION disabled, so task
      * creation here is a one-time heap allocation at boot -- not the
      * steady-state control-path churn REQ-RUN-003 targets, which the
      * TST-OLED-07 heap trace below covers separately. */
-    if (xTaskCreate(display_task, "display", 2048, &bootLoopCounter, 5,
+    if (xTaskCreate(display_task, "display", 2048, &bootLoop.resets, 5,
                     &s_displayTaskHandle) != pdPASS) {
         puts("{\"system\":\"SAFE_HALT\",\"reason\":\"TASK_INIT\"}");
         return;

@@ -57,14 +57,32 @@ void EcuM_RecordRunActivation(EcuM_ContextType *context)
     }
 }
 
-int EcuM_CheckBootLoop(EcuM_ContextType *context, uint32_t resets,
-                       uint32_t windowMs)
+int EcuM_EvaluateBootLoop(EcuM_ContextType *context,
+                          EcuM_BootLoopType *retained,
+                          Mcal_McuResetReasonType reason, int64_t nowUs)
 {
-    context->bootLoopCount = resets;
-    if (resets >= 5U && windowMs <= 300000U) {
+    if (context == 0 || retained == 0) {
+        return 0;
+    }
+    /* Retained memory is undefined after a power-on or brownout, so the window
+     * is re-armed rather than trusted -- including when it holds a start time
+     * in the future, which would otherwise never expire. */
+    const int expired = (nowUs - retained->windowStartUs) > ECUM_BOOT_LOOP_WINDOW_US ||
+                        nowUs < retained->windowStartUs;
+    if (reason == MCAL_MCU_RESET_POWERON || reason == MCAL_MCU_RESET_BROWNOUT ||
+        expired) {
+        retained->resets = 0U;
+        retained->windowStartUs = nowUs;
+    }
+    if (retained->resets >= ECUM_BOOT_LOOP_MAX_RESETS) {
+        context->bootLoopCount = retained->resets;
         EcuM_EnterSafeHalt(context);
         return 1;
     }
+    retained->resets++;
+    context->bootLoopCount = retained->resets;
+    /* Sustained running clears the counter through EcuM_RecordRunActivation. */
+    context->bootLoopCounter = &retained->resets;
     return 0;
 }
 
@@ -73,7 +91,9 @@ void EcuM_EnterSafeHalt(EcuM_ContextType *context)
     context->state = ECUM_SAFE_HALT;
     context->watchdogSubscribed = 0U;
     context->resetRequested = 0U;
-#ifdef ESP_PLATFORM
+/* Matches Os_Wrapper.h: the ESP8266 SDK has no per-task unsubscribe, so that
+ * target reaches SAFE_HALT by parking the task instead. */
+#if defined(ESP_PLATFORM) && !defined(MERLIN_HW364A)
     Os_UnsubscribeWatchdog();
 #endif
 }
