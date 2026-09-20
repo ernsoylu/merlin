@@ -5,7 +5,11 @@
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_wifi.h"
+#ifdef MERLIN_HW364A
 #include "tcpip_adapter.h"
+#else
+#include "esp_netif.h"
+#endif
 
 static Mcal_ResultType map_error(esp_err_t error)
 {
@@ -13,11 +17,27 @@ static Mcal_ResultType map_error(esp_err_t error)
            error == ESP_ERR_INVALID_ARG ? MCAL_INVALID_ARG : MCAL_HW_FAIL;
 }
 
+#ifdef MERLIN_HW364A
 static esp_err_t event_handler(void *context, system_event_t *event)
 {
     (void)context;
     (void)event;
     return ESP_OK;
+}
+#endif
+
+/* The two SDKs bring up the stack and the event loop with different APIs:
+ * ESP8266 RTOS SDK v3.4 has tcpip_adapter and the legacy handler-based loop;
+ * ESP-IDF 5.2.3 removed both in favour of esp_netif and the default loop. */
+static esp_err_t stack_init(void)
+{
+#ifdef MERLIN_HW364A
+    tcpip_adapter_init();
+    return esp_event_loop_init(event_handler, 0);
+#else
+    const esp_err_t error = esp_netif_init();
+    return error != ESP_OK ? error : esp_event_loop_create_default();
+#endif
 }
 
 Mcal_ResultType Mcal_Wlan_Init(Mcal_WlanHandleType *handle)
@@ -25,8 +45,7 @@ Mcal_ResultType Mcal_Wlan_Init(Mcal_WlanHandleType *handle)
     if (handle == 0) {
         return MCAL_INVALID_ARG;
     }
-    tcpip_adapter_init();
-    esp_err_t error = esp_event_loop_init(event_handler, 0);
+    esp_err_t error = stack_init();
     if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) {
         return map_error(error);
     }
