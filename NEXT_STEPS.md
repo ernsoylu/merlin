@@ -34,7 +34,7 @@ simulation provider only.
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
-| 7 | v1.1 | — | **started; Packages 7A–7F async-bus, event-port, IRQ-task, cross-core sample, and NvM contracts complete** |
+| 7 | v1.1 | — | **started; Packages 7A–7G async-bus, event-port, IRQ-task, cross-core sample, NvM, and calibration/XCP contracts complete** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -814,6 +814,17 @@ write and watchdog disarm/re-arm callback. CRC or version failure restores
 defaults, marks quality INITIAL, and returns `NVM_CRC_INVALID` / RTF-007. Host
 tests use an in-memory backend; ESP32 provides an NVS blob backend. EcuM
 shutdown wiring, wear-budget measurement, and physical qualification remain
+deferred.
+
+### Package 7G — bounded calibration/XCP CTO contract — 2026-09-20
+
+Complete for the current software-only scope. `Cal` owns a fixed parameter bank
+with unique 16-bit addresses and float range constraints. Its bounded 8-byte
+CTO parser covers `CONNECT`, `GET_STATUS`, `DOWNLOAD` and `UPLOAD`; invalid
+frames, disconnected access, unknown commands and range violations return
+explicit errors. Frame processing remains caller-owned so the existing UART
+MCAL is not duplicated. Standard XCP MTA compatibility, UART transport
+wiring, NvM persistence wiring, DAQ, and physical qualification remain
 deferred.
 
 1. **Async bus transfers with a synchronous bounded facade** — lifts VAL-019,

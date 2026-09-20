@@ -10,6 +10,7 @@ trap 'rm -rf "$OUT"' EXIT
 CFLAGS="-std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined"
 INC="-I$ROOT/v01-reference/components/Std/include -I$ROOT/v01-reference/components/Mcal_Dio/include -I$ROOT/v01-reference/components/Mcal_Uart/include -I$ROOT/v01-reference/components/Mcal_Wdg/include -I$ROOT/v01-reference/components/Mcal_Gpt/include -I$ROOT/v01-reference/components/Mcal_Radio/include -I$ROOT/v01-reference/components/Mcal_Wlan/include -I$ROOT/v01-reference/components/Mcal_Pwm/include -I$ROOT/v01-reference/components/Mcal_Adc/include -I$ROOT/v01-reference/components/Mcal_Spi/include -I$ROOT/v01-reference/components/Mcal_I2c/include -I$ROOT/v01-reference/components/LibPid/include -I$ROOT/v01-reference/components/Drv_Bme280/include -I$ROOT/v01-reference/components/Drv_Ssd1306/include -I$ROOT/v01-reference/components/Rte/include -I$ROOT/v01-reference/components/Os/include -I$ROOT/v01-reference/components/Hm/include -I$ROOT/v01-reference/components/Log/include -I$ROOT/v01-reference/components/Det/include -I$ROOT/v01-reference/components/Swc_ClimateController/include -I$ROOT/v01-reference/components/Swc_DisplayDemo/include -I$ROOT/v01-reference/components/IoHwAb/include -I$ROOT/v01-reference/components/EcuM/include -I$ROOT/v01-reference/components/NvM/include"
 INC="$INC -I$ROOT/v01-reference/components/Mcal_Port/include -I$ROOT/v01-reference/components/Mcal_Mcu/include"
+INC="$INC -I$ROOT/v01-reference/components/Cal/include"
 LAYER_INC="-I$ROOT/v01-reference/components/Std/include -I$ROOT/v01-reference/components/Rte/include"
 
 # One binary per unit: a failure names the unit, and one unit's sanitizer
@@ -37,6 +38,7 @@ run mcal_mcu "$ROOT/v01-reference/components/Mcal_Mcu/src/mcal_mcu.c" "$ROOT/tes
 run mcal_port "$ROOT/v01-reference/components/Mcal_Port/src/mcal_port.c" "$ROOT/test/host/test_mcal_port.c"
 run mcal_i2c "$ROOT/v01-reference/components/Mcal_I2c/src/mcal_i2c.c" "$ROOT/test/host/test_mcal_i2c.c"
 run mcal_i2c_async "$ROOT/v01-reference/components/Mcal_I2c/src/mcal_i2c.c" "$ROOT/test/host/test_mcal_i2c_async.c"
+run cal "$ROOT/v01-reference/components/Cal/src/cal.c" "$ROOT/test/host/test_cal.c"
 run mcal_dio "$ROOT/v01-reference/components/Mcal_Dio/src/mcal_dio.c" "$ROOT/test/host/test_mcal_dio.c"
 run mcal_uart "$ROOT/v01-reference/components/Mcal_Uart/src/mcal_uart.c" "$ROOT/test/host/test_mcal_uart.c"
 run mcal_wdg "$ROOT/v01-reference/components/Mcal_Wdg/src/mcal_wdg.c" "$ROOT/test/host/test_mcal_wdg.c"
