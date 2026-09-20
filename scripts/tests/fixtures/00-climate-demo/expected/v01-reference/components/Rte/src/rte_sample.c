@@ -13,6 +13,12 @@ static portMUX_TYPE sampleLock = portMUX_INITIALIZER_UNLOCKED;
 #define SAMPLE_UNLOCK()
 #endif
 
+#ifdef ESP_PLATFORM
+#define RTE_XCORE_MEMW() __asm__ volatile("memw" ::: "memory")
+#else
+#define RTE_XCORE_MEMW() __asm__ volatile("" ::: "memory")
+#endif
+
 void Rte_SamplePublish(Rte_SampleType *slot, int32_t value,
                        Rte_SampleQualityType quality, int64_t sampleTimeUs)
 {
@@ -74,6 +80,43 @@ int Rte_EnvironmentalIsFresh(const Rte_EnvironmentalDataType *value,
     return value->quality[0] == RTE_QUALITY_VALID &&
            value->quality[1] == RTE_QUALITY_VALID &&
            value->quality[2] == RTE_QUALITY_VALID;
+}
+
+void Rte_EnvironmentalXcorePublish(Rte_EnvironmentalXcoreSlotType *slot,
+                                   const Rte_EnvironmentalDataType *value)
+{
+    if (slot == 0 || value == 0) {
+        return;
+    }
+    /* ponytail: one writer per slot; serialize writers if that changes. */
+    const uint32_t version = __atomic_load_n(&slot->version, __ATOMIC_RELAXED) & ~1U;
+    __atomic_store_n(&slot->version, version + 1U, __ATOMIC_RELEASE);
+    RTE_XCORE_MEMW();
+    slot->value = *value;
+    RTE_XCORE_MEMW();
+    __atomic_store_n(&slot->version, version + 2U, __ATOMIC_RELEASE);
+}
+
+int Rte_EnvironmentalXcoreRead(const Rte_EnvironmentalXcoreSlotType *slot,
+                               Rte_EnvironmentalDataType *out)
+{
+    if (slot == 0 || out == 0) {
+        return 0;
+    }
+    for (uint8_t retry = 0U; retry < RTE_XCORE_READ_RETRIES; ++retry) {
+        const uint32_t start = __atomic_load_n(&slot->version, __ATOMIC_ACQUIRE);
+        if ((start & 1U) != 0U) {
+            continue;
+        }
+        RTE_XCORE_MEMW();
+        *out = slot->value;
+        RTE_XCORE_MEMW();
+        const uint32_t end = __atomic_load_n(&slot->version, __ATOMIC_ACQUIRE);
+        if (start == end) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int event_config_valid(const Rte_EventQueueConfigType *config)

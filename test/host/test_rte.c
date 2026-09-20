@@ -76,6 +76,24 @@ static void test_environmental_freshness(void)
     assert(!Rte_EnvironmentalIsFresh(0, 1000000, 50U));
 }
 
+static void test_environmental_xcore_slot(void)
+{
+    Rte_EnvironmentalXcoreSlotType slot = {0};
+    Rte_EnvironmentalDataType sample = valid_sample(2000000);
+    Rte_EnvironmentalDataType out = {0};
+
+    assert(!Rte_EnvironmentalXcoreRead(0, &out));
+    assert(!Rte_EnvironmentalXcoreRead(&slot, 0));
+    __atomic_store_n(&slot.version, 1U, __ATOMIC_RELEASE);
+    assert(!Rte_EnvironmentalXcoreRead(&slot, &out));
+    Rte_EnvironmentalXcorePublish(&slot, &sample);
+    assert(Rte_EnvironmentalXcoreRead(&slot, &out));
+    assert(out.sequence == sample.sequence &&
+           out.sampleTimeUs == sample.sampleTimeUs &&
+           out.temperatureDegC == sample.temperatureDegC);
+    assert((__atomic_load_n(&slot.version, __ATOMIC_ACQUIRE) & 1U) == 0U);
+}
+
 static void event_handler(uint32_t event, void *context)
 {
     uint32_t *last = context;
@@ -133,6 +151,7 @@ int main(void)
     test_scalar_sample();
     test_environmental_slot();
     test_environmental_freshness();
+    test_environmental_xcore_slot();
     test_event_queue();
     return 0;
 }

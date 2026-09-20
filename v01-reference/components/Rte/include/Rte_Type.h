@@ -27,6 +27,13 @@ typedef struct {
     Rte_EnvironmentalDataType value;
 } Rte_EnvironmentalSlotType;
 
+#define RTE_XCORE_READ_RETRIES 3U
+
+typedef struct {
+    uint32_t version;
+    Rte_EnvironmentalDataType value;
+} Rte_EnvironmentalXcoreSlotType;
+
 #define RTE_MONOCHROME_FRAME_WIDTH 128U
 #define RTE_MONOCHROME_FRAME_HEIGHT 64U
 #define RTE_MONOCHROME_FRAME_BYTES \
@@ -93,6 +100,10 @@ void Rte_EnvironmentalRead(const Rte_EnvironmentalSlotType *slot,
                            Rte_EnvironmentalDataType *out);
 int Rte_EnvironmentalIsFresh(const Rte_EnvironmentalDataType *value,
                              int64_t nowUs, uint32_t maxAgeMs);
+void Rte_EnvironmentalXcorePublish(Rte_EnvironmentalXcoreSlotType *slot,
+                                   const Rte_EnvironmentalDataType *value);
+int Rte_EnvironmentalXcoreRead(const Rte_EnvironmentalXcoreSlotType *slot,
+                               Rte_EnvironmentalDataType *out);
 Rte_EventResultType Rte_EventQueueInit(Rte_EventQueueType *queue,
                                        const Rte_EventQueueConfigType *config);
 Rte_EventResultType Rte_EventQueuePush(Rte_EventQueueType *queue,
