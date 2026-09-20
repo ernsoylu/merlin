@@ -14,10 +14,13 @@ no conformance** — it reuses the methodology and the naming because they are a
 good way to keep a firmware tree from turning into a pile of globals. It is also
 not developed to ISO 26262 or IEC 61508 and carries no ASIL/SIL claim.
 
-> **Status: ESP32 reference/host slice implemented; ESP8266 support pending.**
-> The ESP32 image builds, passes host/QEMU checks, and has booted on HW-394.
-> Its default QEMU/hardware smoke uses deterministic fake sensors; physical
-> BME280 measurements, ESP8266 qualification and HW-364A OLED proof remain.
+> **Status: internal runtime implemented; devboard/OLED work is active.** The
+> ESP32 image builds, passes host/QEMU checks, and has booted on HW-394. The
+> ESP8266/HW-364A image builds and has been visually verified on the connected
+> OLED. Deterministic fake sensors cover the environmental contract. Exact
+> external device drivers and their physical qualification are deliberately
+> deferred; current work is internal BSW/MCAL, WLAN/BT capabilities,
+> hardware-peripheral drivers and board-specific services.
 > [NEXT_STEPS.md](NEXT_STEPS.md) defines the gates;
 > [PROJECT_DEFINITION.md](PROJECT_DEFINITION.md) 2.2.0 is normative.
 
@@ -25,15 +28,16 @@ not developed to ISO 26262 or IEC 61508 and carries no ASIL/SIL claim.
 
 | ECU | Board profile | Default device selection | Current status |
 |---|---|---|---|
-| ESP32 | HW-394 | Climate-demo explicitly adds BME280 sensors and PWM fan | Reference runtime + boot smoke; real sensor measurement pending |
-| ESP8266 | Generic/raw, with actual module and wiring | No automatic OLED; choose compatible drivers explicitly | Planned |
-| ESP8266 | HW-364A | Reusable SSD1306 driver instance plus reserved onboard bus pins/address | Host display slice; backend/physical proof pending |
+| ESP32 | HW-394 | Simulated environmental provider and PWM fan | Internal runtime + boot smoke; external sensor work deferred |
+| ESP8266 | Generic/raw, with actual module and wiring | No automatic OLED; choose qualified capabilities explicitly | Backend/MCAL work active |
+| ESP8266 | HW-364A | Reusable SSD1306 driver instance plus reserved onboard bus pins/address | OLED build, transfer and visual baseline passed; remaining backend/radio work active |
 
 HW-364A board selection will add the OLED automatically; its demo binds a display
 SWC through RTE. The same SSD1306 driver will support explicitly wired panels on
-generic ESP8266 or ESP32. BME280 is also in the portable device catalog, with
-support qualified per ECU/device combination. ESP8266 requires a separate native
-SDK/backend; the current ESP-IDF 5.2.3 setup covers ESP32 only.
+generic ESP8266 or ESP32. BME280 is retained as a simulation/contract provider
+in the portable catalog, but its exact external transport remains
+non-selectable/deferred until hardware is available. ESP8266 requires a
+separate native SDK/backend; the current ESP-IDF 5.2.3 setup covers ESP32 only.
 
 The [board reference](https://github.com/peff74/esp8266_OLED_HW-364A)
 configures an SSD1306 128×64 display at `0x3C`, SDA GPIO14 and SCL GPIO12.
@@ -80,8 +84,9 @@ hardware interfaces (`PwmDutyCycle`, `DioLevel`), so a fan is just another port.
 ## Architecture of the generated firmware
 
 This is the intended architecture; current implementation coverage is described
-above. Device drivers include BME280 and the planned reusable SSD1306. Each ECU
-has its own MCAL/runtime backend and capability subset.
+above. Device drivers include the available reusable SSD1306 path and a
+deferred BME280 catalog entry. Each ECU has its own MCAL/runtime backend,
+hardware-peripheral set and WLAN/BT capability subset.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -156,7 +161,7 @@ interfaces/         the PortInterface catalog, versioned
 drivers/<type>/     driver sources + <type>.json manifest + tests
 handcode/<swctype>/ SWC sources + manifest + tests
 soc/ modules/ devkits/ overlays/    hardware description, four tiers
-v01-reference/      hand-built ESP32/host reference; becomes golden fixture #0 after qualification
+v01-reference/      hand-built ESP32/host current-scope reference; becomes golden fixture #0 after qualification
 v01-hw364a-reference/  hand-built ESP8266/OLED reference; future fixture #1
 code/               generated output — generated artifacts only
 test/               generated host-test project + QEMU model
@@ -254,12 +259,17 @@ SSD1306 coverage is claimed from the ESP32 QEMU boot. See
 
 | | |
 |---|---|
-| **v0.1** | complete HW-394 climate reference; generic ESP8266 backend and reusable SSD1306 driver exercised on HW-364A; per-target qualification |
-| **freeze** | measured numbers and ECU/board/driver separation into schema 2.2.0 |
-| **v1.0** | reproduce both qualified references; generic driver selection and automatic HW-364A OLED defaults |
+| **v0.1** | internal runtime, simulated environmental provider, generic ESP8266 backend and reusable SSD1306/OLED path |
+| **current** | qualify internal MCAL/BSW, WLAN/BT capabilities, hardware-peripheral drivers and board-specific services on devboards |
+| **freeze** | measured current-scope numbers and ECU/board/driver separation into schema 2.2.0 |
+| **v1.0** | reproduce current-scope references; generic capability selection and automatic HW-364A OLED defaults |
 | **v1.1** | async bus transfers, event ports, IRQ runnables, calibration over XCP-on-UART, NvM, overlays, TWAI |
 | **v1.2** | ESP32-S3/C3 profiles, secure boot, Ethernet, SDIO, crypto |
 | **v2.0** | GUI configurator over the same JSON model |
+
+External device-driver qualification, beginning with BME280, follows the
+current-scope generator work when the exact devices and bench hardware are
+available.
 
 The ordering is deliberate and is the main risk control in the project: the
 reference path is hand-built and proven on silicon *first*, the numbers it

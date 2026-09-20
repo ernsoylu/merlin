@@ -35,6 +35,9 @@ typedef struct {
     Bme280_StateType state;
     Bme280_HealthType health;
     Mcal_ResultType lastResult;
+    uint8_t consecutiveFailures;
+    uint8_t recoveryCooldown;
+    uint32_t recoveryCount;
 } Bme280_InstanceType;
 
 void Bme280_InstanceInit(Bme280_InstanceType *instance,

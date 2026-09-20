@@ -5,78 +5,18 @@
 #include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_system.h"
-#include "esp_task_wdt.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "rom/ets_sys.h"
 
 #include "DisplayDemo.h"
+#include "Mcal_Gpt.h"
 #include "Mcal_I2c.h"
+#include "Mcal_Wdg.h"
+#include "Mcal_Wlan.h"
+#include "Os_Wrapper.h"
+#include "sdkconfig.h"
 #include "ssd1306_frame.h"
-
-/* This SDK's build also defines -DESP_PLATFORM (see make/project.mk), so the
- * shared v01-reference Os component's ESP32-only per-task TWDT block
- * (esp_task_wdt_add/delete, absent from this SDK) would try to compile here
- * too. Rather than touch a component the ESP32 reference also depends on
- * under time pressure, this reference duplicates just the small, portable,
- * already host-tested release/deadline state machine locally. Semantics
- * match Os_Wrapper.h's Os_ReleaseStateType exactly; fixing the ESP_PLATFORM
- * collision so both targets can share one file is follow-up work. */
-typedef struct {
-    int64_t expectedTick;
-    int64_t periodTicks;
-    int64_t jitterToleranceTicks;
-    uint32_t skippedActivations;
-    uint32_t lateActivations;
-    uint32_t deadlineMisses;
-} Hw364a_ReleaseStateType;
-
-static void Hw364a_ReleaseInit(Hw364a_ReleaseStateType *state, int64_t firstBoundary)
-{
-    *state = (Hw364a_ReleaseStateType){.expectedTick = firstBoundary};
-}
-
-static void Hw364a_ReleaseConfigure(Hw364a_ReleaseStateType *state,
-                                    int64_t periodTicks, int64_t jitterToleranceTicks)
-{
-    state->periodTicks = periodTicks;
-    state->jitterToleranceTicks = jitterToleranceTicks;
-}
-
-static int Hw364a_ReleaseSkip(Hw364a_ReleaseStateType *state, int64_t actualTick,
-                              int64_t periodTicks)
-{
-    if (actualTick <= state->expectedTick || periodTicks <= 0) {
-        return 0;
-    }
-    state->expectedTick = ((actualTick / periodTicks) + 1) * periodTicks;
-    state->skippedActivations++;
-    return 1;
-}
-
-static int Hw364a_ReleaseRecordWake(Hw364a_ReleaseStateType *state, int64_t actualTick)
-{
-    if (state->periodTicks <= 0) {
-        return 0;
-    }
-    if (actualTick > state->expectedTick + state->jitterToleranceTicks) {
-        state->lateActivations++;
-        return 1;
-    }
-    state->expectedTick += state->periodTicks;
-    return 0;
-}
-
-static int Hw364a_DeadlineCheck(Hw364a_ReleaseStateType *state, int64_t completionTick,
-                                int64_t deadlineTick)
-{
-    if (completionTick <= deadlineTick) {
-        return 0;
-    }
-    state->deadlineMisses++;
-    return 1;
-}
 
 #define HW364A_SDA_GPIO 14
 #define HW364A_SCL_GPIO 12
@@ -109,7 +49,18 @@ static uint32_t s_injectFailuresRemaining;
 static Ssd1306_InstanceType s_display;
 static DisplayDemo_CtxType s_demo;
 static Mcal_I2cHandleType s_i2c;
+static Mcal_WdgHandleType s_wdg;
 static TaskHandle_t s_displayTaskHandle;
+#if CONFIG_MERLIN_ENABLE_WLAN
+static Mcal_WlanHandleType s_wlan;
+#endif
+
+static int64_t time_us(void)
+{
+    int64_t value = 0;
+    (void)Mcal_Gpt_GetTimeUs(&value);
+    return value;
+}
 
 static Mcal_ResultType map_error(esp_err_t error)
 {
@@ -156,7 +107,7 @@ static Mcal_ResultType write_register(void *context, uint8_t address,
     if (handle == 0 || !handle->initialized || data == 0 || length == 0U) {
         return MCAL_INVALID_ARG;
     }
-    const int64_t startUs = esp_timer_get_time();
+    const int64_t startUs = time_us();
     Mcal_ResultType result;
     if (s_injectFailuresRemaining > 0U) {
         /* TST-OLED-04: software-injected NACK burst, no electrical fault
@@ -167,7 +118,7 @@ static Mcal_ResultType write_register(void *context, uint8_t address,
     } else {
         result = transfer(handle, address, reg, data, length);
     }
-    const int64_t elapsedUs = esp_timer_get_time() - startUs;
+    const int64_t elapsedUs = time_us() - startUs;
     if (reg == HW364A_SSD1306_CONTROL_DATA) {
         s_chunkCount++;
         s_chunkTimeTotalUs += elapsedUs;
@@ -266,23 +217,24 @@ static void print_status(const Ssd1306_InstanceType *display)
 
 /* Direct-to-task notification startup gate (PROJECT_DEFINITION §11): the
  * display task blocks immediately on creation and only proceeds once
- * app_main has finished bus/panel init and releases it. TWDT subscription
- * happens after the gate opens, and is fed exactly once per activation. This
- * SDK has no per-task TWDT add/delete like ESP32's; esp_task_wdt_init() is a
- * single global subscribe with no unsubscribe API, so SAFE_HALT here relies
- * on never reaching the periodic loop again rather than an explicit
- * unsubscribe call. */
+ * app_main has finished bus/panel init and releases it. Watchdog subscription
+ * happens after the gate opens, and is fed exactly once per activation. The
+ * Mcal_Wdg adapter records that this SDK has no unsubscribe API, so SAFE_HALT
+ * relies on parking the task rather than an explicit stop call. */
 static void display_task(void *argument)
 {
     uint32_t *bootLoopCounter = argument;
     (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    (void)esp_task_wdt_init();
+    if (Mcal_Wdg_Init(&s_wdg, &(Mcal_WdgConfigType){.timeoutMs = 15000U}) != MCAL_OK) {
+        puts("{\"system\":\"SAFE_HALT\",\"reason\":\"WDT_INIT\"}");
+        return;
+    }
 
     const TickType_t periodTicks = pdMS_TO_TICKS(HW364A_TASK_PERIOD_MS);
     TickType_t lastWake = xTaskGetTickCount();
-    Hw364a_ReleaseStateType release;
-    Hw364a_ReleaseInit(&release, (int64_t)lastWake + periodTicks);
-    Hw364a_ReleaseConfigure(&release, periodTicks, pdMS_TO_TICKS(HW364A_TASK_JITTER_MS));
+    Os_ReleaseStateType release;
+    Os_ReleaseInit(&release, (int64_t)lastWake + periodTicks);
+    Os_ReleaseConfigure(&release, periodTicks, pdMS_TO_TICKS(HW364A_TASK_JITTER_MS));
 
     uint32_t activation = 0U;
     uint32_t goodFrames = 0U;
@@ -290,18 +242,18 @@ static void display_task(void *argument)
         vTaskDelayUntil(&lastWake, periodTicks);
         const TickType_t actualWake = xTaskGetTickCount();
         activation++;
-        if (Hw364a_ReleaseSkip(&release, actualWake, periodTicks)) {
+        if (Os_ReleaseSkip(&release, actualWake, periodTicks)) {
             printf("{\"rtf\":\"RTF-003-SKIP\",\"activation\":%u,\"skipped\":%u}\n",
                    activation, (unsigned)release.skippedActivations);
-            esp_task_wdt_reset();
+            (void)Mcal_Wdg_Feed(&s_wdg);
             continue;
         }
-        if (Hw364a_ReleaseRecordWake(&release, actualWake)) {
+        if (Os_ReleaseRecordWake(&release, actualWake)) {
             printf("{\"rtf\":\"RTF-LATE\",\"activation\":%u,\"late\":%u}\n",
                    activation, (unsigned)release.lateActivations);
         }
 
-        const int64_t startUs = esp_timer_get_time();
+        const int64_t startUs = time_us();
         DisplayDemo_Run(&s_demo);
         const Rte_MonochromeFrameType *frame = DisplayDemo_GetFrame(&s_demo);
         const Ssd1306_FrameViewType view = {
@@ -327,8 +279,8 @@ static void display_task(void *argument)
         }
 #endif
 
-        const int64_t elapsedUs = esp_timer_get_time() - startUs;
-        if (Hw364a_DeadlineCheck(&release, elapsedUs,
+        const int64_t elapsedUs = time_us() - startUs;
+        if (Os_DeadlineCheck(&release, elapsedUs,
                              (int64_t)HW364A_TASK_DEADLINE_MS * 1000)) {
             /* CONFIG_NEWLIB_NANO_FORMAT drops %lld; elapsedUs fits in 32 bits
              * for any activation on this reference (worst case ~1.3e6 us). */
@@ -336,7 +288,7 @@ static void display_task(void *argument)
                    activation, (long)elapsedUs);
         }
         /* Exactly one feed for each completed activation. */
-        esp_task_wdt_reset();
+        (void)Mcal_Wdg_Feed(&s_wdg);
 
         print_status(&s_display);
         if (s_display.health == SSD1306_HEALTH_READY) {
@@ -427,6 +379,13 @@ void app_main(void)
          * report is ever emitted for a failed init. */
         return;
     }
+#if CONFIG_MERLIN_ENABLE_WLAN
+    const Mcal_ResultType wlanInit = Mcal_Wlan_Init(&s_wlan);
+    const Mcal_ResultType wlanStart = wlanInit == MCAL_OK
+        ? Mcal_Wlan_Start(&s_wlan) : wlanInit;
+    printf("{\"wlan\":\"lifecycle\",\"init\":%u,\"start\":%u}\n",
+           (unsigned)wlanInit, (unsigned)wlanStart);
+#endif
     DisplayDemo_Init(&s_demo);
     xTaskNotifyGive(s_displayTaskHandle);
 }

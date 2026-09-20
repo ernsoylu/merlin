@@ -7,28 +7,44 @@ says only **in what order** and **against what evidence**.
 Update the status table when a gate passes. A phase is not done because its
 deliverables exist — it is done when its **gate** holds.
 
+## Current scope decision — 2026-09-19
+
+Available hardware is limited to development boards and the connected
+ESP8266/HW-364A OLED. External device-driver work that needs an exact device
+or additional bench hardware is deliberately deferred: BME280 transport,
+external-sensor wiring, calibration, electrical fault qualification and their
+device-specific manifests/fixtures are not current blockers.
+
+The active path is the internal runtime and board/backend work that can be
+proved now: Std/Rte/Os/EcuM/Hm/Det/Log, MCAL services, board-specific and
+hardware-peripheral drivers, WLAN/BT capability services where the ECU
+supports them, the connected SSD1306/OLED path, resource/capability validation,
+host tests and devboard evidence. The existing BME280 fake path remains a
+simulation provider only.
+
 ## Status
 
 | Phase | Name | Gate | Status |
 |-------|------|------|--------|
 | 0 | Repository skeleton & toolchain | `check-env` green on a clean machine | **complete** |
 | 0E | ESP8266 backend qualification | generic ECU SDK/compiler pinned; build and runtime feasibility recorded | **complete; full behavioral/watchdog qualification is Phase 2** |
-| 1 | v0.1 reference firmware | complete HW-394 and HW-364A paths; host/layering tests; ESP32 QEMU and ESP8266 hardware boot | **complete; Phase 2 hardware acceptance pending** |
-| 2 | Hardware validation & measurement | §8.3 and OLED acceptance pass per ECU, numbers recorded | **HW-364A: TST-OLED-02/03/04/05/06/07 passed, TST-OLED-08 partial (RTC boot-loop gap found), TST-OLED-01 partial. HW-394: TST-ACC-05/06/08/09/10 passed (fault injection + real absent-device NACK, no sensor needed), TST-ACC-01/02/04 blocked pending a wired BME280, TST-ACC-03/07 implicit/not separately re-verified; two real firmware bugs found and fixed (RTC persistence, unwired controlled-reset)** |
-| 3 | Schema freeze | measured numbers and modular ECU/board/driver model; §4 schema 2.2.0 frozen | **not started** |
+| 1 | v0.1 reference firmware | internal runtime, simulated-provider path, HW-364A OLED path, host/layering tests and target boots | **complete for current scope; external device drivers deferred** |
+| 2 | Available-hardware validation & measurement | internal/runtime, radio-capability, hardware-peripheral and connected-OLED evidence | **active; HW-364A OLED evidence mostly passed, internal/radio/peripheral tracks next; external BME280 scenarios deferred** |
+| 3 | Schema freeze | measured internal/board/backend numbers and modular ECU/driver model; §4 schema 2.2.0 frozen | **not started; follows Phase 2 current-scope evidence** |
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **not started** |
-| 5 | Generator MVP | fixtures #0/#1 regenerate byte-identical; generic ESP8266 and board-default selection work | **not started** |
+| 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **not started** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **not started** |
 | 7 | v1.1 | — | planned |
-| 8 | v1.2 | — | planned |
+| 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
 **Current reality check (2026-09-19).** The ESP32 climate runtime now builds with
 ESP-IDF 5.2.3, passes the host suite and explicit BME280/OLED layering checks,
 passes parsed QEMU structured-output startup, and has booted on HW-394 with
 verified 4 MB flash writes. The HW-394 image currently uses deterministic fake
-sensors by default, so external BME280 wiring and measured control behavior
-remain open. A same-day HW-394 Phase 2 session (devkit connected, no BME280
+sensors by default; external BME280 wiring and measured control behavior are
+deliberately deferred until the device is available. A same-day HW-394 session
+(devkit connected, no BME280
 wired) found and fixed two real bugs: the RTC boot-loop counter used
 `RTC_DATA_ATTR`, which ESP-IDF documents as surviving deep sleep only, not a
 plain `esp_restart()` (fixed with `RTC_NOINIT_ATTR` plus a 300 s window that
@@ -38,13 +54,20 @@ to failsafe, reset logged, then `esp_restart()`). Re-verified end to end: 5
 controlled resets -> `SAFE_HALT` on boot 6, zero TWDT panics. A new
 `CONFIG_MERLIN_INJECT_SLOW_T500` Kconfig knob and the real (non-fake) I2C path
 against an unpopulated bus together evidenced TST-ACC-05/06/08/09/10 without
-needing a physical sensor; TST-ACC-01/02/04 stay blocked until a BME280 is
-wired. The session also found that ordinary diagnostic `printf` logging alone
+needing a physical sensor; TST-ACC-01/02/04 remain deferred until a BME280 is
+wired. The new fake transport disconnect knobs also exercised the mid-run
+isolation/recovery path: ambient recovered to `READY`, enclosure stayed
+`READY`, EcuM returned to `RUN`, and the recovery counter reached 1 with zero
+deadline skips or fault markers; this is simulation evidence only. The session
+also simulated persistent ambient loss: the cached sample became stale and the
+fan reached `1000‰` failsafe while the enclosure remained healthy. The session
+also found that ordinary diagnostic `printf` logging alone
 (no fault at all) can self-trigger the controlled-reset/boot-loop path via
-likely priority inversion on shared blocking stdio -- root-caused, worked
-around for this session's instrumentation, not fixed at the architecture
-level (the durable fix is routing output through the existing `Log_Ring` plus
-a dedicated low-priority drain task, which isn't wired up yet). See
+likely priority inversion on shared blocking stdio -- root-caused and fixed by
+routing task-path output through the existing `Log_Ring` and a dedicated static
+low-priority drain task; a 125 s no-injection HW-394 run passed with one
+heartbeat, zero deadline faults/skips, and zero panic/watchdog/reset markers.
+See
 [measurements](docs/measurements.md) for full detail. The native ESP8266 RTOS SDK v3.4 HW-364A reference now builds,
 hash-verifies its flash writes, boots the identified ESP8266EX/2 MB unit, and
 repeatedly transfers frames to the OLED at GPIO14/GPIO12, address 0x3C. A
@@ -81,7 +104,10 @@ remains later phases.
 Phase 0's existing completion marker applies only to the original ESP32 setup.
 Phase 0E records the isolated ESP8266 RTOS SDK v3.4/GCC 8.4.0 environment and
 native HW-364A runtime baseline; it does not claim full qualification.
-Phases 3–6 still wait for qualified runtimes and measurements from both targets.
+Phases 2–6 now proceed using available devboards, internal services,
+board-specific drivers and the connected OLED. External device-driver
+qualification is deferred to Phase 8 and is not a prerequisite for schema,
+fixture or generator work.
 
 ---
 
@@ -151,9 +177,11 @@ to Phase 2. Unsupported services remain non-selectable.
 before any generator exists. Everything v1.0 later generates must first exist
 here as code a person wrote and understood.
 
-The configuration is the climate-demo of §4.4: two BME280 instances on I2C0 at
-0x76/0x77, one `ClimateController` SWC instance, one PWM fan through IoHwAb,
-three tasks (T10/T100/T500), no radio. The second configuration uses generic
+The current reference composition is the climate-demo shape of §4.4, but uses
+the deterministic environmental simulation provider: two simulated sensor
+instances, one `ClimateController` SWC instance, one PWM fan through IoHwAb,
+three tasks (T10/T100/T500), and no radio in the smoke image. Exact external
+BME280 transport is deferred. The second configuration uses generic
 ESP8266 services with HW-364A board wiring and a reusable SSD1306 driver/display
 SWC. Its schedule and budgets must be established independently.
 
@@ -196,10 +224,10 @@ Bottom-up, because each step adds exactly one thing that can be wrong.
    the test that proves back-to-back activation does not happen.
 4. **Rte.** Per-port storage, the critical-section bounded copy, implicit
    snapshot cached per *runnable invocation*, freshness evaluated at read.
-5. **Drv_Bme280.** Split `bme280_calc.c` (integer Bosch compensation, pure,
-   host-tested) from `bme280.c` (register access). Two instances, independent
-   state, `start-check-read` across three activations, 30 ms acquisition period
-   on a 10 ms activation rate.
+5. **Environmental simulation provider.** Keep the existing fake BME280-shaped
+   transport for runtime, recovery, stale-data and failsafe tests. Do not make
+   exact BME280 transport, wiring or physical qualification a prerequisite for
+   the current reference gate; that work belongs to Phase 8.
 6. **LibPid + Swc_ClimateController.** The SWC includes no driver header and no
    ESP-IDF header — that is what `neg_swc_includes_driver.c` exists to prove.
    PID `dt` comes from the activation delta, not from the nominal period.
@@ -225,11 +253,14 @@ Bottom-up, because each step adds exactly one thing that can be wrong.
 3. Wire `DisplayDemo.DisplayOut → onboardOled.Frame` and its health report.
    Test visible patterns/counters and error handling on HW-364A. Board hardware
    defaults and application bindings remain separate concerns.
-4. Qualify portable BME280 transport on ESP8266 with an attached sensor before
-   claiming that driver/ECU combination works. Test shared OLED/sensor bus
-   scheduling when both are selected; this is separate from the minimum OLED demo.
+4. Implement and qualify board/backend services that are available without
+   external devices: UART, I2C, PWM/GPT/watchdog, WLAN/BT capability selection
+   where supported, and target-specific hardware-peripheral or acceleration
+   paths. Unsupported services must fail validation rather than inherit from
+   another ECU.
 5. Prove generic selection without an OLED is valid, and that the board-specific
-   reference uses the same driver/backend rather than a HW-364A fork.
+   reference uses the same driver/backend rather than a HW-364A fork. Keep
+   external BME280 selection visible but deferred/non-selectable until Phase 8.
 
 The existing ESP32 climate work can proceed independently. Neither track may
 claim the other track's timing, peripheral or watchdog evidence.
@@ -289,24 +320,71 @@ gate. Physical device acceptance and measurements follow in Phase 2.
 
 ---
 
-## Phase 2 — Hardware validation & measurement campaign
+## Phase 2 — Available-hardware validation & measurement campaign
 
-**Goal.** Run §8.3 on HW-394 and the common runtime/OLED scenarios on HW-364A,
-with evidence for generic ESP8266 driver combinations. Record numbers separately
-per ECU/backend/board. This phase is the reason the generator does not exist yet.
+**Goal.** Qualify what can be built and measured with the available devboards
+and connected HW-364A OLED. Record numbers separately per ECU/backend/board for
+internal services, board-specific drivers, radio capability paths, hardware
+peripherals/acceleration and the OLED. External-device qualification is not a
+Phase 2 gate.
 
 ### Bring-up order
 
 Each step adds one thing that can be wrong, so a failure localises itself.
 
-1. **PWM fan + LED only.** No bus. Proves Port init, PWM init, the task wrapper,
-   the gate and the epoch.
-2. **I2C probe.** Log which addresses ACK before any driver runs, so a wiring
-   fault is distinguishable from a driver fault.
-3. **One BME280.** Chip-ID check, one acquisition, plausible values.
-4. **Both BME280s.** Independent state, distinct `sequence` counters — the
-   instance model's first real test.
-5. **Full loop.** Sensors → controller → fan, with supervision armed.
+1. **Board and ECU inventory.** Confirm module identity, flash, exposed pins,
+   reset behavior, clocks, SDK/backend and available peripheral controllers.
+2. **Internal runtime.** Port/Dio, UART, I2C, PWM/GPT, watchdog, startup gate,
+   timing, logging, supervision and failsafe behavior with no external device.
+3. **Hardware-peripheral/acceleration paths.** Implement and test the target's
+   available PWM/LEDC, ADC/RMT/GPT/SPI or equivalent services; record unsupported
+   capabilities explicitly per ECU.
+4. **Radio services.** Add WLAN and BT capability contracts/backends where the
+   selected ECU supports them; validate core reservations, ADC2 conflicts,
+   startup/shutdown and unsupported-service rejection. ESP8266 BT remains
+   unsupported unless the selected SDK proves otherwise.
+5. **Full internal loop.** Runtime → board services → actuator/display, with
+   supervision armed and structured evidence. Use simulated environmental data
+   where the application needs a provider.
+
+### Active implementation backlog
+
+1. **Internal BSW/MCAL services — active.** DIO now has a standalone
+   validation/native-GPIO contract with host evidence, the UART contract has a
+   native SDK backend with host validation, and the ESP8266 OLED path reuses
+   the shared OS release/deadline state machine, and the HW-364A task now
+   feeds the watchdog through an MCAL adapter, and OLED timing now uses the
+   shared MCAL GPT microsecond timebase. The existing PWM adapter now also
+   compiles against the ESP8266 native PWM API with host contract coverage.
+   Complete target validation and remaining adapters for Mcu/Port/I2c as
+   applicable, plus Os/EcuM/Hm/Det/Log/Rte integration and capability
+   reporting.
+2. **Hardware-peripheral drivers — active.** The ESP8266 PWM adapter is the
+   first target-specific peripheral path; it is build-validated but not flashed
+   or driven on an unconnected output. The ESP8266 ADC capability wrapper is
+   now also build-validated with host contract coverage, but remains unused by
+   the OLED image. The SPI capability boundary now exposes HSPI only: CSPI is
+   reserved by flash, and HSPI's fixed GPIO12–15 mapping overlaps the OLED.
+   The minimal reservation checker now rejects HSPI/OLED GPIO collisions and
+   requires an explicit compatible key for shared I2C. Full schema/CLI
+   allocation remains Phase 5 work; RMT remains explicitly unsupported on
+   ESP8266 until an SDK-backed path exists.
+3. **WLAN/BT services — capability boundary active.** The radio contract now
+   exposes explicit WLAN/BT capability bits and rejects unsupported selection.
+   The ESP8266 native WLAN init/start/stop hook now compiles and passed an
+   opt-in hardware smoke (`init=0`, `start=0`) while the default OLED image
+   remains disabled. Next add explicit capability enablement, core/resource
+   reservations, startup/shutdown and fault reporting. ESP8266 WLAN is still
+   target work;
+   ESP8266 Bluetooth is unsupported unless proven by its SDK. ESP32 WLAN/BT
+   remains capability-gated rather than assumed.
+4. **HW-specific drivers — next.** Keep pins, reset levels, board defaults and
+   soldered-device reservations in board profiles; add only thin target
+   adapters where the SDK or silicon requires them. The HW-364A SSD1306 path is
+   the available concrete driver and remains in scope.
+5. **Evidence — next.** Add one host test or devboard check per non-trivial
+   service, then update the capability matrix before moving to Phase 3 schema
+   freeze.
 
 ### HW-364A bring-up order
 
@@ -314,20 +392,22 @@ Identify processor/module/flash and verify wiring → probe the documented OLED
 bus → establish visible clear/fill/corner/checkerboard patterns → run changing
 counter through SWC/RTE/driver/MCAL → qualify chunk timing, faults and supervision.
 Run [TST-OLED-01…08](docs/ecu-support.md#hw-364a-acceptance), recording visual
-confirmation separately from ACK/serial evidence. External BME280 support uses
-its own test record; OLED success alone does not validate that sensor driver.
+confirmation separately from ACK/serial evidence. External BME280 support is
+not part of this gate; the OLED and internal/runtime evidence stand on their own.
 
 ### Acceptance scenarios (§8.3)
 
 Each needs recorded evidence, not a "looks right":
 
-- two identical sensors: independent config, state, outputs, sequence counters
-- sensor disconnected mid-run: NACK bounded within contract, DEGRADED after
-  debounce, recovery attempted, **the other sensor unaffected**
-- cached value republished: `sampleTimeUs` unchanged, age advances, consumer
-  sees stale
-- bus stuck low: three bounded timeouts, 9-clock recovery, cooldown, other tasks
+- internal service instances: independent config, state, outputs and counters
+- board driver disconnected/fault-injected mid-run: bounded error, recovery,
+  **other services unaffected**
+- cached simulated value: `sampleTimeUs` unchanged, age advances, consumer
+  sees stale and actuator/display policy remains safe
+- bus fault injection: bounded timeouts, 9-clock recovery, cooldown, other tasks
   still meet deadlines
+- WLAN/BT capability selection: supported services initialize and unsupported
+  services are rejected without contaminating another ECU's capability set
 - runnable overruns its deadline: RTF-002 raised **while the TWDT stays silent**
 - driver init fails: dependents follow `initPolicy`, system reaches DEGRADED, no
   boot loop
@@ -366,7 +446,10 @@ Open point §12.1 — the HW-394 board manifest has to be populated from a physi
 board: header availability per pin, fitted pull-up values, onboard devices, and
 the per-IO electrical `idleLevel` for the reset window. HW-364A and generic
 ESP8266 configurations require their own module/wiring facts and flash checks
-(§12.5–7). Do this on the boards, not from an unverified sales listing.
+(§12.5–7). Do this on the boards, not from an unverified sales listing. These
+facts constrain final qualification but do not block the current internal,
+radio, hardware-peripheral or OLED implementation track. Exact external device
+drivers remain deferred until their hardware is available.
 
 ---
 
@@ -377,14 +460,17 @@ schemas.
 
 ### Tasks
 
-1. Write the §4 manifests for real: `interfaces/environmental.json`,
-   `drivers/bme280/bme280.json`, `handcode/climatecontroller/climatecontroller.json`,
+1. Write the §4 manifests for the current scope: internal service/capability
+   manifests, the simulated environmental provider,
+   `handcode/climatecontroller/climatecontroller.json`,
    `project.json`, `soc/esp32.json`, `modules/esp32-wroom-32.json`,
    `devkits/devkit-hw394.json`. Replace every placeholder number with a Phase 2
    measurement, with a margin policy that is written down rather than intuited.
    Add the generic ESP8266 SoC/module/wiring profiles, HW-364A board defaults,
-   reusable SSD1306 driver manifest, `MonochromeFrame`, display SWC and second
-   reference composition. Add driver/ECU compatibility and qualification state.
+   reusable SSD1306 driver manifest, WLAN/BT capability manifests,
+   hardware-peripheral capability manifests, `MonochromeFrame`, display SWC and
+   second reference composition. Add driver/ECU compatibility and qualification
+   state. Keep external BME280 manifests deferred/non-selectable.
    Separate `target.ecu` and SDK from board selection (§4.6); record physical
    constraints independently from configurable defaults. Do not hardcode OLED
    pins in the device manifest or force an OLED onto generic ESP8266 projects.
@@ -404,8 +490,10 @@ schemas.
 
 ### Gate
 
-Every manifest validates against its schema; every executable number traces to a
-Phase 2 measurement; VAL-023 closes; `print-schema` emits all nine.
+Every current-scope manifest validates against its schema; every executable
+number traces to a Phase 2 measurement; VAL-023 closes; `print-schema` emits all
+current-scope schemas. Deferred external-device manifests are not required for
+this gate.
 
 ---
 
@@ -420,7 +508,7 @@ discovered by hand.
 
 | Path | Content |
 |------|---------|
-| `scripts/tests/fixtures/00-climate-demo/project.json` | the §4.4 composition |
+| `scripts/tests/fixtures/00-climate-demo/project.json` | the §4.4 composition using the simulated environmental provider |
 | `scripts/tests/fixtures/00-climate-demo/expected/` | byte-exact expected tree — **initially a copy of `v01-reference/`** |
 | `scripts/tests/fixtures/01-hw364a-oled-demo/` | project and qualified ESP8266/OLED expected tree, from `v01-hw364a-reference/` |
 | `scripts/tests/harness.py` | generate into a temp dir, compare byte-for-byte, report a readable per-file diff |
@@ -450,9 +538,10 @@ in `expected/` produces a diff naming that file and that byte.
 
 ## Phase 5 — Generator MVP (v1.0)
 
-**Goal.** Reproduce fixtures #0/#1 byte-for-byte, support generic ESP8266 with
-explicit driver selection, and resolve HW-364A defaults through the same model.
-Selectable scope is exactly the qualified driver/backend combinations
+**Goal.** Reproduce the current-scope fixtures byte-for-byte, support generic
+ESP8266 with explicit capability/driver selection, and resolve HW-364A defaults
+through the same model. Selectable scope is exactly the qualified
+internal/backend/OLED/radio combinations
 (Appendix A, decisions 15 and 22).
 
 Build the pipeline in dependency order; each stage gets tests before the next
@@ -535,10 +624,11 @@ previous `project.json` and the lock preview are all available headless.
 
 ### Gate
 
-`generate` on fixtures #0/#1 reproduces both qualified reference trees, which
-build under their respective SDKs and pass their Phase 1 tests. Generic ESP8266
-has no implicit OLED; HW-364A adds the normal SSD1306 instance and reservations
-exactly once. Pin/address conflicts and unsupported drivers fail validation.
+`generate` on the current-scope fixtures reproduces both reference trees, which
+build under their respective SDKs and pass their Phase 1 tests. Generic
+ESP8266 has no implicit OLED; HW-364A adds the normal SSD1306 instance and
+reservations exactly once. Pin/address conflicts, unsupported capabilities and
+deferred external drivers fail validation or are reported non-selectable.
 
 ---
 
@@ -552,17 +642,19 @@ exactly once. Pin/address conflicts and unsupported drivers fail validation.
 2. **Negative compile tests in CI** — assert the layering violations *fail*.
    Add the include/symbol lint alongside, since `REQUIRES` cannot prove the
    boundary on its own.
-3. **Provider-swap fixture** (REQ-ARCH-002) — replace the BME280 with a second
-   type providing `EnvironmentalData` and assert the ASW output is unchanged.
-   This is the single test that proves the composition model works.
+3. **Provider-swap fixture** (REQ-ARCH-002) — replace the simulated
+   environmental provider with a second provider of `EnvironmentalData` and
+   assert the ASW output is unchanged. Keep this provider internal/simulated;
+   do not pull deferred external-device work into the current fixture set.
 4. **Interrupted-generation test** — kill mid-render, assert the previous output
    is intact and still builds.
 5. **Fixture set** beyond #0: single instance; three instances; a VAL error case
    per error-severity rule; a warning-acknowledgment case; a sticky-allocation
    case; fixture #1 HW-364A defaults; generic ESP8266 with no OLED; explicit
-   external SSD1306/BME280 combinations; compatible shared bus; duplicate OLED
+   SSD1306/radio/peripheral combinations; compatible shared bus; duplicate OLED
    address; pin conflict; disabled onboard-device reservations; board change
-   without implicit relocation; wrong SDK/core/peripheral rejection.
+   without implicit relocation; wrong SDK/core/peripheral rejection; deferred
+   external-driver rejection.
 6. **NFR check** — generation ≤ 30 s at 50 device instances / 30 SWC instances /
    8 tasks. Generate that fixture and time it.
 7. **Complete `docs/traceability.md`** — every REQ mapped to design section,
@@ -613,15 +705,27 @@ unblocks.
 
 ---
 
-## Phase 8 — v1.2
+## Phase 8 — Deferred external-device qualification
 
-ESP32-S3 and C3 SoC profiles (building on the ESP32/ESP8266 tier separation)
-· ULP · secure boot and flash encryption behind
-`device-security --expert`, with the one-way nature stated at every prompt ·
-E2E protection on Twai · Eth · Sdio · crypto with entropy gating (VAL-022:
-crypto with Rng and no radio is a weak-entropy path and an Error).
+This phase starts only when the exact external hardware is available. It is
+deliberately after the internal runtime, board/backend, radio, hardware-
+peripheral, schema, fixture and generator work.
 
-## Phase 9 — v2.0
+1. Attach and identify the target external device(s); record wiring, power,
+   pull-ups, address straps and module markings.
+2. Implement the reusable device driver through the existing Std/Rte/MCAL
+   contracts; do not fork a board-specific driver unless the hardware truly
+   requires a target adapter.
+3. Add host fault tests, target timing, electrical fault/recovery evidence,
+   manifests, compatibility entries and current-scope fixtures only after the
+   device passes its acceptance gate.
+4. Re-run shared-bus, resource allocation, generator and regression checks.
+
+BME280 is the first deferred example. Its current fake transport, recovery,
+stale-data and failsafe tests remain useful contract coverage but do not claim
+physical driver support.
+
+## Phase 9 — v1.2/v2.0 platform expansion
 
 Broader driver and SWC catalog. GUI configurator over the same JSON model —
 the model is the product; the GUI is a second front end onto it, and if it needs

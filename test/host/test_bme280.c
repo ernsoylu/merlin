@@ -14,8 +14,16 @@ typedef struct {
     uint8_t lastRegister;
     unsigned int writes;
     unsigned int reads;
+    unsigned int recoveries;
     Mcal_ResultType nextResult;
 } MockI2cType;
+
+static Mcal_ResultType recover(void *context)
+{
+    MockI2cType *mock = context;
+    mock->recoveries++;
+    return MCAL_OK;
+}
 
 static Mcal_ResultType write_register(void *context, uint8_t address,
                                       uint8_t reg, const uint8_t *data,
@@ -125,7 +133,7 @@ int main(void)
     encode_sample(&mock, 415148, 519888, 32257);
     const Mcal_I2cInterfaceType i2c = {
         .context = &mock, .writeRegister = write_register,
-        .readRegister = read_register
+        .readRegister = read_register, .recover = recover
     };
     Bme280_InstanceType first;
     Bme280_InstanceType second;
@@ -150,5 +158,8 @@ int main(void)
     mock.nextResult = MCAL_NACK;
     assert(Bme280_MainFunction_High(&first, 4000) == MCAL_NACK);
     assert(first.sequence == 1U && first.health == BME280_HEALTH_DEGRADED);
+    assert(Bme280_MainFunction_High(&first, 5000) == MCAL_NACK);
+    assert(Bme280_MainFunction_High(&first, 6000) == MCAL_NACK);
+    assert(mock.recoveries == 1U && first.recoveryCount == 1U);
     return 0;
 }

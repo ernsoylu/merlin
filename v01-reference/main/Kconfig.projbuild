@@ -6,6 +6,33 @@ config MERLIN_FAKE_SENSORS
     help
         Enables the QEMU/reference path. Set false for a wired sensor bench.
 
+config MERLIN_FAKE_DISCONNECT_SENSOR
+    int "Fake sensor to disconnect (-1 = none, 0 = ambient, 1 = enclosure)"
+    range -1 1
+    default -1
+    depends on MERLIN_FAKE_SENSORS
+    help
+        Makes the selected fake sensor NACK after the configured number of
+        completed samples. The other fake sensor continues normally.
+
+config MERLIN_FAKE_DISCONNECT_AFTER_SAMPLES
+    int "Completed samples before fake disconnect (0 = disabled)"
+    range 0 100000
+    default 0
+    depends on MERLIN_FAKE_SENSORS
+    help
+        Used with MERLIN_FAKE_DISCONNECT_SENSOR to exercise a mid-run sensor
+        loss without physical hardware.
+
+config MERLIN_FAKE_DISCONNECT_FOR_ACTIVATIONS
+    int "Fake disconnect duration in activations (0 = persistent)"
+    range 0 100000
+    default 0
+    depends on MERLIN_FAKE_SENSORS
+    help
+        Automatically restores the selected fake sensor after this many
+        failed start attempts, allowing recovery-path simulation.
+
 config MERLIN_I2C_SDA_GPIO
     int "Reference I2C SDA GPIO"
     range 0 39

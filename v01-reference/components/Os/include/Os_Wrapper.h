@@ -63,7 +63,7 @@ typedef struct {
 #endif
 } Os_TaskConfigType;
 
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM) && !defined(MERLIN_HW364A)
 int Os_CreateStaticTask(Os_TaskConfigType *config);
 int Os_ReleaseTask(Os_TaskConfigType *config);
 void Os_UnsubscribeWatchdog(void);

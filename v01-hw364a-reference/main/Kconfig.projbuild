@@ -1,0 +1,11 @@
+menu "Merlin HW-364A reference"
+
+config MERLIN_ENABLE_WLAN
+    bool "Enable WLAN lifecycle smoke"
+    default n
+    help
+        Initializes and starts the ESP8266 WLAN driver in null mode. No
+        station credentials are configured and no network connection is made.
+        Keep disabled for the default OLED smoke image.
+
+endmenu

@@ -5,6 +5,12 @@ The ESP32 reference and host-testable SSD1306/display pieces are implemented
 in `v01-reference/`; the native ESP8266/HW-364A bring-up reference is in
 `v01-hw364a-reference/`. Full physical qualification remains pending.
 
+Current hardware scope is development boards plus the connected HW-364A OLED.
+Internal BSW/MCAL, target-specific services, WLAN/BT capability paths,
+hardware-peripheral drivers and the SSD1306/OLED path are active. External
+device drivers, beginning with BME280, remain cataloged but non-selectable and
+deferred until the exact devices and bench setup are available.
+
 ## Composition and support status
 
 Selection has three independent parts: **ECU target → board profile → device
@@ -14,7 +20,7 @@ image. Selecting two different ECU types does not create a network between them.
 
 | ECU target | Board choice | Devices selected by default | Status |
 |---|---|---|---|
-| `esp32` | HW-394 | Climate-demo adds two external BME280s and a fan | Runtime builds; QEMU and HW-394 boot smoke passed; real sensor evidence pending |
+| `esp32` | HW-394 | Climate-demo uses simulated environmental data and a fan | Internal runtime builds; QEMU and HW-394 boot smoke passed; external BME280 deferred |
 | `esp8266` | Generic/raw ESP8266 | None | Baseline backend builds; concrete module/wiring and driver qualification required |
 | `esp8266` | HW-364A | One `ssd1306` instance named `onboardOled`, including its I2C wiring/address reservations | Native build/boot/I2C/OLED transfer baseline passed; acceptance measurements pending |
 
@@ -36,10 +42,12 @@ be rejected before generation; no empty driver stubs may count as support.
 | Component | ESP32 | Generic ESP8266 | ESP8266 + HW-364A |
 |---|---|---|---|
 | `ssd1306` device driver | Compatible via MCAL I2c; external wiring and panel configuration required | Compatible via MCAL I2c; explicit instance/wiring | Same driver, automatically instantiated by board defaults |
-| `bme280` device driver | Existing compensation helper; transport and dual-sensor runtime pending | Planned portable driver via MCAL I2c; requires physical sensor tests | Optional external sensor; share OLED bus only with verified wiring, distinct address, compatible speed and schedule |
-| Port/Dio, I2c, Uart | Required MCAL services; reference implementations pending | I2C baseline implemented; remaining services are not qualified | Reuses generic ESP8266 services |
-| Time/watchdog, Os/EcuM | ESP32-specific implementation of common runtime contract pending | ESP8266 adapters must be qualified | Reuses generic ESP8266 adapters |
-| Pwm/IoHwAb fan | Required by climate reference; pending | Not in initial qualified subset; add only after a native implementation and tests | Same restriction as generic ESP8266 |
+| `bme280` device driver | Simulation/compensation path only; external transport deferred | Deferred; requires exact sensor and physical tests | Deferred external sensor; shared-bus qualification follows hardware availability |
+| Port/Dio, I2c, Uart | DIO/UART contracts added; target evidence pending | I2C baseline implemented; UART and remaining services are not qualified | Reuses generic ESP8266 services |
+| Time/GPT/watchdog, Os/EcuM | GPT timebase and watchdog contracts added; target evidence pending | ESP8266 GPT/watchdog adapters are in the OLED path; qualification pending | Reuses generic ESP8266 adapters |
+| Pwm/IoHwAb fan | Required by climate reference; pending | Native ESP8266 PWM adapter builds and has host contract coverage; output qualification pending | Same restriction as generic ESP8266 |
+| SPI/RMT | Target-specific qualification pending | HSPI capability only; CSPI is flash-reserved and RMT is unsupported | HSPI pins conflict with the onboard OLED |
+| WLAN/BT capability | Explicit capability contract; backend not yet qualified | Native WLAN init/start/stop hook passed opt-in smoke; default disabled; Bluetooth remains unsupported | Same restriction as generic ESP8266 |
 | Other catalog modules | Selectable only after target-specific qualification | No inheritance of ESP32 peripheral inventory | Same restriction as generic ESP8266 |
 
 SSD1306 addressing/command generation and BME280 compensation/state machines
@@ -93,10 +101,12 @@ Selecting HW-364A performs these planned composition steps:
    itself adds hardware, not an arbitrary application SWC. An unbound required
    frame port is still VAL-007, with an actionable binding error.
 
-For generic ESP8266, add `ssd1306`, `bme280` or both explicitly and supply their
-bus, pins, addresses and module/board limits. OLED driver defaults must not
-hardcode HW-364A pins. Reuse the existing SoC ∧ module ∧ board ∧ overlay model;
-there is no extra board-only driver layer.
+For generic ESP8266, add supported current-scope devices such as `ssd1306`
+explicitly and supply their bus, pins, addresses and module/board limits.
+Deferred external devices such as `bme280` remain visible for later validation
+but are rejected as selectable physical targets until their hardware is present.
+OLED driver defaults must not hardcode HW-364A pins. Reuse the existing SoC ∧
+module ∧ board ∧ overlay model; there is no extra board-only driver layer.
 
 Project configuration may explicitly disable use of the onboard display, but
 that does not disconnect its soldered bus wiring. Keep its electrical/address
@@ -145,8 +155,13 @@ The [SDK I2C API](https://docs.espressif.com/projects/esp8266-rtos-sdk/en/latest
 documents synchronous command-link operations. Inspect the pinned implementation
 for actual elapsed-time bounds, allocation and error behavior. A timeout
 parameter or an Arduino library call is not timing evidence. Start qualification
-with Wi-Fi disabled; no Bluetooth or ESP32-only peripheral capabilities are
-inherited. The existing ESP32 QEMU machine does not qualify ESP8266 or its OLED.
+with Wi-Fi disabled for the OLED smoke; then implement WLAN capability
+selection and backend tests as a separate active track. No Bluetooth or
+ESP32-only peripheral capabilities are inherited by ESP8266; unsupported
+selections must be rejected. The current reservation checker rejects HSPI's
+fixed GPIO12–15 mapping when the HW-364A OLED owns GPIO12/14 and permits shared
+I2C only with an explicit compatible bus key. The existing ESP32 QEMU machine does not qualify
+ESP8266 or its OLED.
 
 ## OLED runtime contract
 
@@ -230,15 +245,17 @@ useful for wiring diagnosis but is not TST-OLED-02.
 2. Implement generic ESP8266 MCAL/runtime services and reusable `ssd1306`
    packing/transport, with the smallest host checks and an actual OLED demo.
    Keep HW-364A wiring in configuration. Complete the ESP32 reference in parallel.
-3. Run OLED and common runtime acceptance; qualify generic ESP8266 driver
-   selection with explicit wiring. Port/test BME280 transport against a real
-   sensor before calling that combination hardware-supported.
-4. After measurements, define the 2.2.0 target/board/driver schemas. Test HW-364A
+3. Run OLED and common runtime acceptance; qualify generic ESP8266 capability
+   selection with explicit wiring. Implement WLAN/backend and available
+   hardware-peripheral services, rejecting unsupported capabilities. Keep BME280
+   transport deferred until a real sensor is available.
+4. After current-scope measurements, define the 2.2.0 target/board/driver schemas. Test HW-364A
    auto-selection, idempotence, pin/address conflicts, shared-bus compatibility,
    generic ESP8266 without an OLED, and unsupported peripheral rejection.
-5. Freeze the qualified HW-394 and HW-364A trees as fixtures #0/#1; add generic
-   ESP8266 composition tests. Build the comparator before the generator, then
-   implement deterministic board-default expansion and per-target generation.
+5. Freeze the current-scope HW-394 and HW-364A trees as fixtures #0/#1; add
+   generic ESP8266 composition tests. Build the comparator before the generator,
+   then implement deterministic board-default expansion and per-target
+   generation. Add external-device fixtures only in the deferred phase.
 
 The HW-364A profile is complete only when selecting it resolves the standard
 SSD1306 instance and correct reservations, its generated image builds with the

@@ -24,7 +24,8 @@ typedef enum {
     MCAL_ARB_LOST,
     MCAL_BUSY,
     MCAL_INVALID_ARG,
-    MCAL_HW_FAIL
+    MCAL_HW_FAIL,
+    MCAL_UNSUPPORTED
 } Mcal_ResultType;
 
 #endif

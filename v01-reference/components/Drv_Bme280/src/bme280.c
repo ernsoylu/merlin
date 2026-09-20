@@ -9,6 +9,8 @@
 #define BME280_REG_CALIB_H2 0xE1U
 #define BME280_STATUS_MEASURING 0x08U
 #define BME280_FORCED_MEASUREMENT 0x25U
+#define BME280_MAX_FAILURES_BEFORE_RECOVERY 3U
+#define BME280_RECOVERY_COOLDOWN_ACTIVATIONS 10U
 
 static Mcal_ResultType fail(Bme280_InstanceType *instance,
                             Mcal_ResultType result)
@@ -16,6 +18,38 @@ static Mcal_ResultType fail(Bme280_InstanceType *instance,
     instance->lastResult = result;
     instance->health = BME280_HEALTH_DEGRADED;
     return result;
+}
+
+static int recoverable(Mcal_ResultType result)
+{
+    return result == MCAL_NACK || result == MCAL_TIMEOUT ||
+           result == MCAL_ARB_LOST || result == MCAL_HW_FAIL;
+}
+
+static Mcal_ResultType runtime_fail(Bme280_InstanceType *instance,
+                                    Mcal_ResultType result)
+{
+    fail(instance, result);
+    if (!recoverable(result)) {
+        return result;
+    }
+    instance->consecutiveFailures++;
+    if (instance->consecutiveFailures >= BME280_MAX_FAILURES_BEFORE_RECOVERY &&
+        instance->recoveryCooldown == 0U && instance->i2c.recover != 0) {
+        (void)instance->i2c.recover(instance->i2c.context);
+        instance->recoveryCount++;
+        instance->consecutiveFailures = 0U;
+        instance->recoveryCooldown = BME280_RECOVERY_COOLDOWN_ACTIVATIONS;
+    }
+    return result;
+}
+
+static void runtime_success(Bme280_InstanceType *instance)
+{
+    instance->consecutiveFailures = 0U;
+    if (instance->recoveryCooldown > 0U) {
+        instance->recoveryCooldown--;
+    }
 }
 
 static uint16_t read_u16(const uint8_t *data)
@@ -145,10 +179,11 @@ Mcal_ResultType Bme280_MainFunction_High(Bme280_InstanceType *instance,
             instance->i2c.context, instance->address, BME280_REG_CTRL_MEAS,
             &value, 1U);
         if (result == MCAL_OK) {
+            runtime_success(instance);
             instance->state = BME280_STATE_CHECK;
             instance->lastResult = MCAL_OK;
         } else {
-            return fail(instance, result);
+            return runtime_fail(instance, result);
         }
         return MCAL_OK;
     }
@@ -159,13 +194,14 @@ Mcal_ResultType Bme280_MainFunction_High(Bme280_InstanceType *instance,
             instance->i2c.context, instance->address, BME280_REG_STATUS,
             &status, 1U);
         if (result != MCAL_OK) {
-            return fail(instance, result);
+            return runtime_fail(instance, result);
         }
         if ((status & BME280_STATUS_MEASURING) != 0U) {
             instance->lastResult = MCAL_BUSY;
             return MCAL_BUSY;
         }
         instance->state = BME280_STATE_READ;
+        runtime_success(instance);
         instance->lastResult = MCAL_OK;
         return MCAL_OK;
     }
@@ -174,7 +210,7 @@ Mcal_ResultType Bme280_MainFunction_High(Bme280_InstanceType *instance,
     const Mcal_ResultType result = instance->i2c.readRegister(
         instance->i2c.context, instance->address, BME280_REG_DATA, data, 8U);
     if (result != MCAL_OK) {
-        return fail(instance, result);
+        return runtime_fail(instance, result);
     }
 
     const int32_t pressure = ((int32_t)data[0] << 12) |
@@ -191,6 +227,7 @@ Mcal_ResultType Bme280_MainFunction_High(Bme280_InstanceType *instance,
     instance->quality[2] = RTE_QUALITY_VALID;
     instance->state = BME280_STATE_START;
     instance->health = BME280_HEALTH_READY;
+    runtime_success(instance);
     instance->lastResult = MCAL_OK;
     return MCAL_OK;
 }

@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "EcuM.h"
+#include "Log_Ring.h"
 #include "Os_Wrapper.h"
 
 #ifdef ESP_PLATFORM
@@ -94,7 +95,15 @@ typedef struct {
     uint8_t calibrationH1;
     uint8_t calibrationHumidity[7];
     uint8_t sample[8];
+    uint32_t sampleReads[2];
+    uint32_t disconnectAttempts[2];
 } EcuM_FakeI2cType;
+
+enum {
+    ECUM_LOG_SENSOR = 1U,
+    ECUM_LOG_HEARTBEAT,
+    ECUM_LOG_CONTROLLED_RESET
+};
 
 typedef struct {
     EcuM_ContextType context;
@@ -109,6 +118,8 @@ typedef struct {
     int64_t publishMaxUs;
     uint32_t publishSamples;
     const Os_ReleaseStateType *t10Release;
+    Log_RingType log;
+    uint8_t fanHealthy;
 } EcuM_RuntimeType;
 
 static void put_u16(uint8_t *data, uint16_t value)
@@ -158,22 +169,73 @@ static void fake_prepare(EcuM_FakeI2cType *fake)
     fake->sample[7] = (uint8_t)humidity;
 }
 
+static int fake_sensor_index(uint8_t address)
+{
+    return address == 0x76U ? 0 : address == 0x77U ? 1 : -1;
+}
+
+static int fake_sensor_disconnected(const EcuM_FakeI2cType *fake,
+                                    uint8_t address)
+{
+#if CONFIG_MERLIN_FAKE_SENSORS
+#if CONFIG_MERLIN_FAKE_DISCONNECT_AFTER_SAMPLES > 0
+    const int index = fake_sensor_index(address);
+    if (index < 0 || CONFIG_MERLIN_FAKE_DISCONNECT_SENSOR != index ||
+        fake->sampleReads[index] < CONFIG_MERLIN_FAKE_DISCONNECT_AFTER_SAMPLES) {
+        return 0;
+    }
+#if CONFIG_MERLIN_FAKE_DISCONNECT_FOR_ACTIVATIONS > 0
+    return fake->disconnectAttempts[index] <=
+           CONFIG_MERLIN_FAKE_DISCONNECT_FOR_ACTIVATIONS;
+#else
+    return 1;
+#endif
+#else
+    (void)fake;
+    (void)address;
+    return 0;
+#endif
+#else
+    (void)fake;
+    (void)address;
+    return 0;
+#endif
+}
+
 static Mcal_ResultType fake_write(void *context, uint8_t address, uint8_t reg,
                                   const uint8_t *data, uint16_t length)
 {
-    (void)context;
-    (void)address;
+    const EcuM_FakeI2cType *fake = context;
+#if CONFIG_MERLIN_FAKE_DISCONNECT_AFTER_SAMPLES > 0
+    EcuM_FakeI2cType *mutableFake = context;
+    const int index = fake_sensor_index(address);
+    if (reg == 0xF4U && index >= 0 &&
+        fake->sampleReads[index] >= CONFIG_MERLIN_FAKE_DISCONNECT_AFTER_SAMPLES) {
+        mutableFake->disconnectAttempts[index]++;
+    }
+#endif
+    if (fake_sensor_disconnected(fake, address)) {
+        return MCAL_NACK;
+    }
     (void)reg;
     (void)data;
     (void)length;
     return MCAL_OK;
 }
 
+static Mcal_ResultType fake_recover(void *context)
+{
+    (void)context;
+    return MCAL_OK;
+}
+
 static Mcal_ResultType fake_read(void *context, uint8_t address, uint8_t reg,
                                  uint8_t *data, uint16_t length)
 {
-    const EcuM_FakeI2cType *fake = context;
-    (void)address;
+    EcuM_FakeI2cType *fake = context;
+    if (fake_sensor_disconnected(fake, address)) {
+        return MCAL_NACK;
+    }
     if (reg == 0xD0U && length == 1U) {
         data[0] = fake->chipId;
     } else if (reg == 0x88U && length == sizeof(fake->calibrationTp)) {
@@ -186,6 +248,10 @@ static Mcal_ResultType fake_read(void *context, uint8_t address, uint8_t reg,
         data[0] = 0U;
     } else if (reg == 0xF7U && length == sizeof(fake->sample)) {
         for (uint16_t i = 0; i < length; ++i) data[i] = fake->sample[i];
+        const int index = fake_sensor_index(address);
+        if (index >= 0) {
+            fake->sampleReads[index]++;
+        }
     } else {
         return MCAL_INVALID_ARG;
     }
@@ -202,8 +268,12 @@ static void report_fault(void *argument, uint32_t fault, int64_t value)
             /* Failsafe first: drive the actuator off before the reset takes effect. */
             const float failsafeDuty = IoHwAb_FanApply(&runtime->fan, 0.0f, 0);
             (void)Mcal_Pwm_SetDuty(&runtime->fanPwm, (uint16_t)(failsafeDuty * 1000.0f));
-            printf("{\"system\":\"CONTROLLED_RESET\",\"reason\":\"DEADLINE_FAULTS\",\"count\":%u}\n",
-                   (unsigned)runtime->context.controlledResets);
+            (void)Log_TryPush(&runtime->log, (Log_RecordType){
+                .code = ECUM_LOG_CONTROLLED_RESET,
+                .argument = runtime->context.controlledResets
+            });
+            /* Let the low-priority drain emit the forensic record before reboot. */
+            vTaskDelay(pdMS_TO_TICKS(20U));
             esp_restart();
         }
     }
@@ -231,11 +301,16 @@ static const char *ecum_state_name(EcuM_StateType state)
     }
 }
 
-static void report_sensor(const Bme280_InstanceType *sensor, const char *name)
+static void report_sensor(EcuM_RuntimeType *runtime,
+                          const Bme280_InstanceType *sensor, const char *name)
 {
-    printf("{\"instance\":\"%s\",\"health\":\"%s\",\"sequence\":%u,\"temperatureCentiDegC\":%ld}\n",
-           name, sensor_health(sensor->health), (unsigned)sensor->sequence,
-           (long)sensor->sample.temperatureCentiDegC);
+    (void)Log_TryPush(&runtime->log, (Log_RecordType){
+        .code = ECUM_LOG_SENSOR,
+        .argument = sensor->sequence,
+        .timestampUs = sensor->sampleTimeUs,
+        .label = name,
+        .payload = sensor
+    });
 }
 
 static void run_t10(void *argument)
@@ -262,7 +337,7 @@ static void run_t10(void *argument)
                 runtime->publishMaxUs = lockUs;
             }
             runtime->publishSamples++;
-            report_sensor(&runtime->sensors[i],
+            report_sensor(runtime, &runtime->sensors[i],
                           i == 0U ? "ambientSensor" : "enclosureSensor");
         }
     }
@@ -280,8 +355,21 @@ static void run_t100(void *argument)
         &runtime->fan, requested,
         fresh && runtime->controller.outputValid != 0U);
     if (Mcal_Pwm_SetDuty(&runtime->fanPwm, (uint16_t)(applied * 1000.0f)) != MCAL_OK) {
+        runtime->fanHealthy = 0U;
         EcuM_RecordInitFailure(&runtime->context);
     }
+}
+
+static void update_runtime_state(EcuM_RuntimeType *runtime)
+{
+    if (runtime->context.state == ECUM_SHUTDOWN ||
+        runtime->context.state == ECUM_SAFE_HALT) {
+        return;
+    }
+    runtime->context.state = runtime->fanHealthy != 0U &&
+                             runtime->sensors[0].health == BME280_HEALTH_READY &&
+                             runtime->sensors[1].health == BME280_HEALTH_READY
+        ? ECUM_RUN : ECUM_DEGRADED;
 }
 
 static void run_t500(void *argument)
@@ -296,43 +384,72 @@ static void run_t500(void *argument)
 #endif
     EcuM_RecordRunActivation(&runtime->context);
     if (runtime->context.initFailures != 0U) {
-        runtime->context.state = ECUM_DEGRADED;
+        update_runtime_state(runtime);
     }
-    /* Heartbeat: sensor success reports are event-driven (only on a new
-     * acquisition), so this is the only periodic evidence of overall state
-     * when a sensor never succeeds at all. Measured on real HW-394: even an
-     * 8x-throttled (~4s) print here still produced a deadline fault on
-     * nearly every occurrence -- printf shares a blocking stdio lock across
-     * tasks of different priority, so a lower-priority T500 print can hold
-     * it while higher-priority T10 is blocked waiting on the same lock
-     * (priority inversion), which then misses T10's tight 9ms deadline. This
-     * is exactly the failure mode this project's own design docs warn about
-     * for Det/Log ("never block"); the durable fix is routing all diagnostic
-     * output through the existing non-blocking Log_Ring plus a dedicated
-     * low-priority drain task, not attempted here. Throttled hard instead,
-     * since this print exists only to gather Phase 2 evidence. */
+    /* Sensor records are event-driven, so retain one periodic state snapshot. */
     static uint16_t s_heartbeatDivider;
     if (++s_heartbeatDivider < 200U) {
         return;
     }
     s_heartbeatDivider = 0U;
-    printf("{\"heartbeat\":\"%s\",\"ambientSensor\":\"%s\",\"enclosureSensor\":\"%s\","
-           "\"initFailures\":%u,\"deadlineFaults\":%u,"
-           "\"publishLockMinUs\":%lld,\"publishLockMaxUs\":%lld,\"publishSamples\":%u,"
-           "\"t10JitterMinTicks\":%lld,\"t10JitterMaxTicks\":%lld,\"t10JitterSamples\":%u,"
-           "\"t10WakeCount\":%u,\"t10SkippedActivations\":%u}\n",
-           ecum_state_name(runtime->context.state),
-           sensor_health(runtime->sensors[0].health),
-           sensor_health(runtime->sensors[1].health),
-           (unsigned)runtime->context.initFailures,
-           (unsigned)runtime->context.deadlineFaults,
-           (long long)runtime->publishMinUs, (long long)runtime->publishMaxUs,
-           (unsigned)runtime->publishSamples,
-           (long long)runtime->t10Release->jitterMinTicks,
-           (long long)runtime->t10Release->jitterMaxTicks,
-           (unsigned)runtime->t10Release->jitterSamples,
-           (unsigned)runtime->t10Release->wakeCount,
-           (unsigned)runtime->t10Release->skippedActivations);
+    (void)Log_TryPush(&runtime->log, (Log_RecordType){
+        .code = ECUM_LOG_HEARTBEAT,
+        .payload = runtime
+    });
+}
+
+static void log_drain_task(void *argument)
+{
+    EcuM_RuntimeType *runtime = argument;
+    Log_RecordType record;
+    for (;;) {
+        while (Log_TryPop(&runtime->log, &record)) {
+            if (record.code == ECUM_LOG_SENSOR) {
+                const Bme280_InstanceType *sensor = record.payload;
+                printf("{\"instance\":\"%s\",\"health\":\"%s\",\"sequence\":%u,"
+                       "\"temperatureCentiDegC\":%ld}\n",
+                       record.label, sensor_health(sensor->health),
+                       (unsigned)record.argument,
+                       (long)sensor->sample.temperatureCentiDegC);
+            } else if (record.code == ECUM_LOG_HEARTBEAT) {
+                const EcuM_RuntimeType *state = record.payload;
+                Rte_EnvironmentalDataType sample;
+                Rte_EnvironmentalRead(&state->samples[0], &sample);
+                printf("{\"heartbeat\":\"%s\",\"ambientSensor\":\"%s\","
+                       "\"enclosureSensor\":\"%s\",\"initFailures\":%u,"
+                       "\"ambientRecoveryCount\":%u,\"enclosureRecoveryCount\":%u,"
+                       "\"ambientSampleFresh\":%u,\"fanDutyPermille\":%u,"
+                       "\"deadlineFaults\":%u,\"publishLockMinUs\":%lld,"
+                       "\"publishLockMaxUs\":%lld,\"publishSamples\":%u,"
+                       "\"t10JitterMinTicks\":%lld,\"t10JitterMaxTicks\":%lld,"
+                       "\"t10JitterSamples\":%u,\"t10WakeCount\":%u,"
+                       "\"t10SkippedActivations\":%u}\n",
+                       ecum_state_name(state->context.state),
+                       sensor_health(state->sensors[0].health),
+                       sensor_health(state->sensors[1].health),
+                       (unsigned)state->context.initFailures,
+                       (unsigned)state->sensors[0].recoveryCount,
+                       (unsigned)state->sensors[1].recoveryCount,
+                       (unsigned)Rte_EnvironmentalIsFresh(
+                           &sample, esp_timer_get_time(), 50U),
+                       (unsigned)(state->fan.appliedDuty * 1000.0f),
+                       (unsigned)state->context.deadlineFaults,
+                       (long long)state->publishMinUs,
+                       (long long)state->publishMaxUs,
+                       (unsigned)state->publishSamples,
+                       (long long)state->t10Release->jitterMinTicks,
+                       (long long)state->t10Release->jitterMaxTicks,
+                       (unsigned)state->t10Release->jitterSamples,
+                       (unsigned)state->t10Release->wakeCount,
+                       (unsigned)state->t10Release->skippedActivations);
+            } else if (record.code == ECUM_LOG_CONTROLLED_RESET) {
+                printf("{\"system\":\"CONTROLLED_RESET\",\"reason\":"
+                       "\"DEADLINE_FAULTS\",\"count\":%u}\n",
+                       (unsigned)record.argument);
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(10U));
+    }
 }
 
 void EcuM_Startup(void)
@@ -347,6 +464,8 @@ void EcuM_Startup(void)
     static Os_StackType t10Stack[2048];
     static Os_StackType t100Stack[2048];
     static Os_StackType t500Stack[2048];
+    static StackType_t logStack[2048];
+    static StaticTask_t logTaskStorage;
     static Os_TaskConfigType t10 = {
         .name = "T10", .periodMs = 10U, .deadlineMs = 9U,
         .jitterToleranceMs = 1U, .priority = 5U,
@@ -367,6 +486,7 @@ void EcuM_Startup(void)
     };
 
     EcuM_ContextInit(&runtime.context, 0U);
+    Log_RingInit(&runtime.log);
     runtime.context.bootLoopCounter = &bootLoopCounter;
     const esp_reset_reason_t resetReason = esp_reset_reason();
     const int64_t nowUs = esp_timer_get_time();
@@ -395,14 +515,15 @@ void EcuM_Startup(void)
         .frequencyHz = 1000U, .resolutionBits = 10U,
         .initialDutyPermille = 1000U
     };
-    if (Mcal_Pwm_Init(&runtime.fanPwm, &pwmConfig) != MCAL_OK) {
+    runtime.fanHealthy = Mcal_Pwm_Init(&runtime.fanPwm, &pwmConfig) == MCAL_OK;
+    if (runtime.fanHealthy == 0U) {
         EcuM_RecordInitFailure(&runtime.context);
     }
     fake_prepare(&runtime.fake);
 #if CONFIG_MERLIN_FAKE_SENSORS
     runtime.i2c = (Mcal_I2cInterfaceType){
         .context = &runtime.fake, .writeRegister = fake_write,
-        .readRegister = fake_read
+        .readRegister = fake_read, .recover = fake_recover
     };
 #else
     static Mcal_I2cHandleType handle;
@@ -429,7 +550,10 @@ void EcuM_Startup(void)
     t10.context = &runtime;
     t100.context = &runtime;
     t500.context = &runtime;
-    const int tasksReady = Os_CreateStaticTask(&t10) &&
+    const int logReady = xTaskCreateStatic(log_drain_task, "LogDrain",
+                                           2048U, &runtime, 1U, logStack,
+                                           &logTaskStorage) != NULL;
+    const int tasksReady = logReady && Os_CreateStaticTask(&t10) &&
                            Os_CreateStaticTask(&t100) &&
                            Os_CreateStaticTask(&t500);
     if (!tasksReady) {

@@ -1,6 +1,6 @@
 #include "Os_Wrapper.h"
 
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM) && !defined(MERLIN_HW364A)
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 
