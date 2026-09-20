@@ -1,8 +1,6 @@
 # CLAUDE.md
 
 This file provides repository guidance for coding agents, including Luna Code.
-The 2026-09-19 ECU expansion is documentation-only; implement it in a subsequent
-coding task using the handoff below.
 
 ## What this is
 
@@ -18,12 +16,14 @@ Two documents are normative and outrank anything inferred from the tree:
 - **[NEXT_STEPS.md](NEXT_STEPS.md)** — the phased plan and where work currently
   sits. Update its status table when a phase gate passes.
 
-**Current state:** toolchain/CLI skeleton, host tests and a partial ESP32
-`v01-reference/` exist. Build/QEMU/hardware boot smoke passed; two fixed INITIAL
-records do not establish working sensors, startup gate or supervision. The
-generator, frozen schemas and ESP8266/OLED implementation do not exist.
-The layering negative case can fail on an uninitialized variable and must be
-made diagnostic-specific before claiming architectural enforcement.
+**Current state:** toolchain/CLI skeleton, host tests and two hand-built
+references exist — ESP32 `v01-reference/` and ESP8266 `v01-hw364a-reference/`.
+Both build; the ESP32 image passed QEMU and HW-394 boot, and the HW-364A image
+drives the soldered OLED on hardware with a startup gate, deadline detection
+and watchdog supervision. Environmental sensing is still a deterministic
+simulation provider: no external sensor has been wired. The generator and the
+frozen schemas do not exist. Read [NEXT_STEPS.md](NEXT_STEPS.md) for what is
+proved versus implemented — this paragraph goes stale faster than that table.
 
 [ECU support](docs/ecu-support.md) is the target/board/driver contract and Luna
 handoff; [measurements](docs/measurements.md) records actual evidence. ECU target,
@@ -36,8 +36,9 @@ its verified pins/address. Never fork the OLED driver for that board.
 The installer, `check-env`, host tests and Python environment tests exist.
 Other wizard subcommands are placeholders returning exit 2. The commands below
 mix available tooling and planned interfaces (§3.3/§5.1); generator/fixture
-commands remain future work. ESP8266 target options/build commands are not yet
-implemented. Preserve established command spelling when extending them.
+commands remain future work. The wizard has no ESP8266 target option yet; the
+hand-built reference is built with its SDK directly, as below. Preserve
+established command spelling when extending them.
 
 ```bash
 ./install.sh [--dry-run]              # idempotent; pins IDF 5.2.3 + QEMU + python deps
@@ -48,7 +49,16 @@ python scripts/wizard/cli.py audit    # lock hashes vs working tree; also a CMak
 cd code && idf.py build               # the generated project
 ./test/run_tests.sh                   # host tests: plain gcc + assert, no framework, no board
 pytest scripts/                       # generator tests, incl. golden-fixture comparison
+
+# The two hand-built references, each against its own pinned SDK.
+( . ~/esp/esp-idf/export.sh && cd v01-reference && idf.py build )
+( cd v01-hw364a-reference && IDF_PATH=~/esp/ESP8266_RTOS_SDK \
+    PATH=~/esp/xtensa-lx106-elf/bin:~/esp/esp8266-venv/bin:$PATH make )
 ```
+
+Build both after touching anything under `v01-reference/components/`: the two
+SDKs disagree about which APIs exist, so a shared MCAL source can compile for
+one target and fail to resolve a component for the other.
 
 Exit codes are part of the contract: `0` ok, `1` validation error, `2`
 environment error. A validation failure is never exit 0 with a warning on
