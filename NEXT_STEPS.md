@@ -34,7 +34,7 @@ simulation provider only.
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
-| 7 | v1.1 | — | **started; Packages 7A–7H async-bus, event-port, IRQ-task, cross-core sample, NvM, calibration/XCP, and overlay contracts complete** |
+| 7 | v1.1 | — | **started; Packages 7A–7I async-bus, event-port, IRQ-task, cross-core sample, NvM, calibration/XCP, overlay, and TWAI contracts complete** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -835,6 +835,17 @@ sharing key. The model adds those claims after project and board claims, so
 the existing allocation checker enforces the SoC ∧ module ∧ board ∧ overlay
 intersection and reports incompatible overlap. Automatic pin remapping,
 verified board variants, and physical qualification remain deferred.
+
+### Package 7I — bounded TWAI frame contract — 2026-09-20
+
+Complete for the current software-only scope. `Mcal_Twai` validates standard
+11-bit and extended 29-bit frames, owns fixed four-entry TX/RX queues, and
+services at most the caller-declared budget per activation through injected
+transport callbacks. Queue-full, empty-RX, stopped, bus-off and recovery
+paths return explicit bounded results; RX drops are counted. The ESP-IDF
+component compiles for the ESP32 target. Native TWAI controller installation,
+bit-rate/pin configuration, transceiver wiring, loopback, bus-off timing and
+physical qualification remain deferred.
 
 1. **Async bus transfers with a synchronous bounded facade** — lifts VAL-019,
    the co-location rule, which is the largest artificial constraint in v1.0.
