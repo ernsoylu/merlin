@@ -85,6 +85,7 @@ void Mcal_I2cAsync_Init(Mcal_I2cAsyncQueueType *queue,
 Mcal_ResultType Mcal_I2cAsync_Submit(Mcal_I2cAsyncQueueType *queue,
                                      Mcal_I2cAsyncRequestType *request);
 Mcal_ResultType Mcal_I2cAsync_Service(Mcal_I2cAsyncQueueType *queue);
+void Mcal_I2cAsync_ServiceTask(void *context);
 Mcal_ResultType Mcal_I2cAsync_Cancel(Mcal_I2cAsyncQueueType *queue,
                                      Mcal_I2cAsyncRequestType *request);
 Mcal_ResultType Mcal_I2c_TransferBounded(Mcal_I2cAsyncQueueType *queue,

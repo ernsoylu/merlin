@@ -76,8 +76,19 @@ int main(void)
     assert(Mcal_I2cAsync_Submit(&queue, &write) == MCAL_OK);
     assert(Mcal_I2cAsync_Submit(&queue, &write) == MCAL_BUSY);
     assert(Mcal_I2cAsync_Pending(&queue) == 1U);
-    assert(Mcal_I2cAsync_Service(&queue) == MCAL_OK);
+    Mcal_I2cAsync_ServiceTask(&queue);
     assert(mock.writes == 1U && write.completed && completions == 1U);
+    Mcal_I2cAsync_ServiceTask(0);
+
+    uint8_t taskData[2][2] = {{0}};
+    Mcal_I2cAsyncRequestType taskA = read_request(taskData[0], &completions);
+    Mcal_I2cAsyncRequestType taskB = read_request(taskData[1], &completions);
+    assert(Mcal_I2cAsync_Submit(&queue, &taskA) == MCAL_OK);
+    assert(Mcal_I2cAsync_Submit(&queue, &taskB) == MCAL_OK);
+    Mcal_I2cAsync_ServiceTask(&queue);
+    assert(taskA.completed && !taskB.completed && Mcal_I2cAsync_Pending(&queue) == 1U);
+    Mcal_I2cAsync_ServiceTask(&queue);
+    assert(taskB.completed && Mcal_I2cAsync_Pending(&queue) == 0U);
 
     uint8_t data[4][2] = {{0}};
     Mcal_I2cAsyncRequestType requests[4];
@@ -92,7 +103,7 @@ int main(void)
     while (Mcal_I2cAsync_Pending(&queue) != 0U) {
         assert(Mcal_I2cAsync_Service(&queue) == MCAL_OK);
     }
-    assert(mock.reads == 3U);
+    assert(mock.reads == 5U);
 
     uint8_t boundedData[2] = {0U, 0U};
     Mcal_I2cAsyncRequestType bounded = read_request(boundedData, &completions);

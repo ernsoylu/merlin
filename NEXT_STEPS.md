@@ -34,7 +34,7 @@ simulation provider only.
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
-| 7 | v1.1 | — | **started; Package 7A async-bus contract slice complete** |
+| 7 | v1.1 | — | **started; Packages 7A–7B async-bus contract and task adapter complete** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -766,6 +766,15 @@ completion, cancellation, timeout and invalid-request cases. The ESP-IDF 5.2.3
 MCAL object/archive also compiles. This package does not yet run a FreeRTOS
 bus worker or claim target contention/timing evidence; those belong to Package
 7B. Physical qualification remains deferred.
+
+### Package 7B — async-bus task adapter — 2026-09-20
+
+Complete for the current software-only scope. The existing static `Os` task
+wrapper can now schedule `Mcal_I2cAsync_ServiceTask` directly as its runnable;
+each activation services at most one queued transfer, so the task period is the
+declared service rate and the queue capacity remains bounded. Host coverage
+proves the adapter services one request and safely ignores a null context. No
+FreeRTOS target timing, contention, or physical qualification is claimed.
 
 1. **Async bus transfers with a synchronous bounded facade** — lifts VAL-019,
    the co-location rule, which is the largest artificial constraint in v1.0.

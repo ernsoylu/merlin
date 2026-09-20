@@ -243,6 +243,13 @@ Mcal_ResultType Mcal_I2cAsync_Service(Mcal_I2cAsyncQueueType *queue)
     return request->result;
 }
 
+void Mcal_I2cAsync_ServiceTask(void *context)
+{
+    if (context != 0) {
+        (void)Mcal_I2cAsync_Service(context);
+    }
+}
+
 Mcal_ResultType Mcal_I2cAsync_Cancel(Mcal_I2cAsyncQueueType *queue,
                                      Mcal_I2cAsyncRequestType *request)
 {
