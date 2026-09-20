@@ -171,7 +171,7 @@ versions remain independent.
 }
 ```
 
-`kind` ∈ `sample-group` (coherent measurement set + metadata) · `event` (queued, v1.1) · `state` (latest-value scalar; schema 2.2.0 also permits bounded structured state for `MonochromeFrame`) · `parameter` (calibratable, v1.1 Cal). Planned standard interfaces: `HealthReport`, `PwmDutyCycle`, `DioLevel`, `PidParams`. **Interface semver rules:** adding an element = minor; unit change or range narrowing = major. `SUBSTITUTED` quality (v1.1) requires a per-element declared substitute value in the interface; interfaces without one never produce it. Metadata types (normative, in `Rte_Type.h`): `sampleTimeUs` = `int64` µs from `esp_timer_get_time()` (light-sleep behavior per pinned IDF version, recorded in lock); `sequence` = `uint32`, wrap-safe comparison; `quality` **per element**.
+`kind` ∈ `sample-group` (coherent measurement set + metadata) · `event` (queued, v1.1) · `state` (latest-value scalar; schema 2.2.0 also permits bounded structured state for `MonochromeFrame`) · `parameter` (calibratable, v1.1 Cal). Planned standard interfaces: `HealthReport`, `PwmDutyCycle`, `DioLevel`, `PidParams`. **Interface semver rules:** adding an element = minor; unit change or range narrowing = major. `SUBSTITUTED` quality (v1.1) requires a per-element declared substitute value in the interface; interfaces without one never produce it. The provider owns the substitution decision and applies only declared values; consumers preserve `SUBSTITUTED` as distinct from `VALID`. Metadata types (normative, in `Rte_Type.h`): `sampleTimeUs` = `int64` µs from `esp_timer_get_time()` (light-sleep behavior per pinned IDF version, recorded in lock); `sequence` = `uint32`, wrap-safe comparison; `quality` **per element**.
 
 ### 4.2 Driver type manifest — `drivers/bme280/bme280.json` (design example; budgets unmeasured)
 
@@ -666,7 +666,7 @@ Requirement IDs `REQ-ARCH/GEN/RUN/DATA/BSW-nnn`, each mapped to design section, 
 | REQ-BSW-002 | Boot loop terminates in SAFE_HALT | §6.5 | — | TST-ACC-10 |
 | REQ-GEN-001 | Byte-identical regeneration from identical lock + inputs | §3.3 | — | CI double-generate |
 
-The traceability matrix also includes REQ-ECU-001…003, REQ-DISP-001…003, REQ-BOARD-001 and REQ-DRV-001 for target selection, backend qualification, reproducibility, OLED composition, bounded transfers and board evidence. Software evidence is recorded; physical/electrical qualification remains explicitly deferred.
+The traceability matrix also includes REQ-ECU-001…003, REQ-DISP-001…003, REQ-BOARD-001, REQ-DRV-001 and the 7L BswM, substitution and generator-closure rows for target selection, backend qualification, reproducibility, OLED composition, bounded transfers and board evidence. Software evidence is recorded; physical/electrical qualification remains explicitly deferred.
 
 **NFRs:** generation ≤ 30 s for ≤ 50 device instances / 30 SWC instances / 8 tasks (generator capacity, not a promise that either MCU can host that workload); SDK/compiler pinned per ECU lock (ESP32: ESP-IDF 5.2.3; ESP8266 baseline: ESP8266 RTOS SDK v3.4/GCC 8.4.0, full qualification pending); Linux reference OS.
 
@@ -715,12 +715,11 @@ When the current-scope runtime is complete and measured, this tree becomes **gol
 1. **HW-394 board manifest population** — schema and draft manifest exist; physical header/pull-up/onboard-device verification remains pending.
 2. **v1.1 UART multiplexing** — XCP tuning and log on one framed UART vs. a dedicated second UART.
 3. **v1.1 async driver API shape** — preferred: async core with a synchronous bounded facade; alternative: completion callbacks. Decide at v1.1 design.
-4. **Substitute-value policy** (v1.1) — which interfaces declare per-element substitutes and who owns substitution on INVALID.
-5. **HW-364A board identity** — processor identity, 2 MB flash, OLED wiring/controller ACK and GPIO14/GPIO12 are recorded; fitted pull-ups, header exposure and reset behavior remain. Resolve reference D-label ambiguity using GPIO numbers.
-6. **ESP8266 backend qualification** — the v3.4/GCC 8.4.0 pin, native build/flash/boot and repeated OLED transfers are recorded; §6.10 watchdog, timing, reset-history and SAFE_HALT proof remain.
-7. **OLED execution contract** — measure bounded chunk/command time, recovery and full-frame latency under load; freeze static buffer ownership and scheduling from evidence.
-8. **Internal capability qualification** — complete the available MCU/board MCAL, hardware-peripheral/acceleration, WLAN/BT capability and board-driver evidence; unsupported services must remain explicitly non-selectable.
-9. **Deferred external devices** — exact BME280 and other external-device drivers, wiring, calibration, electrical tests and related fixtures wait for the required hardware.
+4. **HW-364A board identity** — processor identity, 2 MB flash, OLED wiring/controller ACK and GPIO14/GPIO12 are recorded; fitted pull-ups, header exposure and reset behavior remain. Resolve reference D-label ambiguity using GPIO numbers.
+5. **ESP8266 backend qualification** — the v3.4/GCC 8.4.0 pin, native build/flash/boot and repeated OLED transfers are recorded; §6.10 watchdog, timing, reset-history and SAFE_HALT proof remain.
+6. **OLED execution contract** — measure bounded chunk/command time, recovery and full-frame latency under load; freeze static buffer ownership and scheduling from evidence.
+7. **Internal capability qualification** — complete the available MCU/board MCAL, hardware-peripheral/acceleration, WLAN/BT capability and board-driver evidence; unsupported services must remain explicitly non-selectable.
+8. **Deferred external devices** — exact BME280 and other external-device drivers, wiring, calibration, electrical tests and related fixtures wait for the required hardware.
 
 ---
 

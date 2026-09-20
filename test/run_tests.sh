@@ -10,7 +10,7 @@ trap 'rm -rf "$OUT"' EXIT
 CFLAGS="-std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined"
 INC="-I$ROOT/v01-reference/components/Std/include -I$ROOT/v01-reference/components/Mcal_Dio/include -I$ROOT/v01-reference/components/Mcal_Uart/include -I$ROOT/v01-reference/components/Mcal_Wdg/include -I$ROOT/v01-reference/components/Mcal_Gpt/include -I$ROOT/v01-reference/components/Mcal_Radio/include -I$ROOT/v01-reference/components/Mcal_Wlan/include -I$ROOT/v01-reference/components/Mcal_Pwm/include -I$ROOT/v01-reference/components/Mcal_Adc/include -I$ROOT/v01-reference/components/Mcal_Spi/include -I$ROOT/v01-reference/components/Mcal_I2c/include -I$ROOT/v01-reference/components/LibPid/include -I$ROOT/v01-reference/components/Drv_Bme280/include -I$ROOT/v01-reference/components/Drv_Ssd1306/include -I$ROOT/v01-reference/components/Rte/include -I$ROOT/v01-reference/components/Os/include -I$ROOT/v01-reference/components/Hm/include -I$ROOT/v01-reference/components/Log/include -I$ROOT/v01-reference/components/Det/include -I$ROOT/v01-reference/components/Swc_ClimateController/include -I$ROOT/v01-reference/components/Swc_DisplayDemo/include -I$ROOT/v01-reference/components/IoHwAb/include -I$ROOT/v01-reference/components/EcuM/include -I$ROOT/v01-reference/components/NvM/include"
 INC="$INC -I$ROOT/v01-reference/components/Mcal_Port/include -I$ROOT/v01-reference/components/Mcal_Mcu/include"
-INC="$INC -I$ROOT/v01-reference/components/Cal/include"
+INC="$INC -I$ROOT/v01-reference/components/Cal/include -I$ROOT/v01-reference/components/BswM/include"
 INC="$INC -I$ROOT/v01-reference/components/Mcal_Twai/include"
 INC="$INC -I$ROOT/v01-reference/components/Mcal_Icu/include"
 LAYER_INC="-I$ROOT/v01-reference/components/Std/include -I$ROOT/v01-reference/components/Rte/include"
@@ -61,6 +61,7 @@ run log_det "$ROOT/v01-reference/components/Log/src/log_ring.c" "$ROOT/v01-refer
 run climate_io "$ROOT/v01-reference/components/LibPid/src/pid.c" "$ROOT/v01-reference/components/Swc_ClimateController/src/climate_controller.c" "$ROOT/v01-reference/components/IoHwAb/src/iohwab_fan.c" "$ROOT/test/host/test_climate_io.c"
 run ecum "$ROOT/v01-reference/components/EcuM/src/ecum.c" "$ROOT/v01-reference/components/EcuM/src/ecum_startup.c" "$ROOT/test/host/test_ecum.c"
 run display_demo "$ROOT/v01-reference/components/Swc_DisplayDemo/src/display_demo.c" "$ROOT/v01-reference/components/Drv_Ssd1306/src/ssd1306_frame.c" "$ROOT/test/host/test_display_demo.c"
+run bswm "$ROOT/v01-reference/components/BswM/src/bswm.c" "$ROOT/test/host/test_bswm.c"
 
 # Prove the allowed side first: an SWC-shaped source compiles without driver
 # include paths.

@@ -24,6 +24,11 @@ not developed to ISO 26262 or IEC 61508 and carries no ASIL/SIL claim.
 > [NEXT_STEPS.md](NEXT_STEPS.md) defines the gates;
 > [PROJECT_DEFINITION.md](PROJECT_DEFINITION.md) 2.2.0 is normative.
 
+Package 7L adds the bounded BswM mode contract, provider-owned declared
+substitution (`RTE_QUALITY_SUBSTITUTED`), and an opt-in unpinned PlatformIO
+adapter. PlatformIO output is best-effort and outside the byte-reproducible
+ESP-IDF path.
+
 ## ECU, board and driver selection
 
 | ECU | Board profile | Default device selection | Current status |
@@ -96,7 +101,7 @@ hardware-peripheral set and WLAN/BT capability subset.
 │ RTE    generated per project: typed port access, coherent    │
 │        sample snapshots, freshness, quality                  │
 ├──────────────────────────────────────────────────────────────┤
-│ BSW    Os (task wrappers)  EcuM (startup/shutdown/degrade)   │
+│ BSW    Os (task wrappers)  EcuM/BswM (mode/startup policy)   │
 │        Hm (supervision)    Det  Log  IoHwAb                  │
 ├──────────────────────────────────────────────────────────────┤
 │ DRV    device drivers — bme280, ssd1306 … instance-based      │

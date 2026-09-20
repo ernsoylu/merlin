@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.wizard.core import env  # noqa: E402
 from scripts.wizard.core.allocate import validate_target_claims  # noqa: E402
-from scripts.wizard.core.generate import generate_project  # noqa: E402
+from scripts.wizard.core.generate import generate_project, write_platformio  # noqa: E402
 from scripts.wizard.core.lock import audit_lock, write_lock  # noqa: E402
 from scripts.wizard.core.model import load_project, resource_claims  # noqa: E402
 from scripts.wizard.core.rte import resolve_connections  # noqa: E402
@@ -31,6 +31,7 @@ COMMANDS = {
     "add": ("add a device instance, module or swc instance", 5),
     "remove": ("remove a device instance, module or swc instance", 5),
     "generate": ("generate the ESP-IDF project", 5),
+    "platformio": ("write an unpinned best-effort PlatformIO adapter", 7),
     "validate": ("schema and semantic validation only", 5),
     "resolve": ("refresh project.lock after source or toolchain changes", 5),
     "allocate": ("resource and pin allocation only", 5),
@@ -64,6 +65,11 @@ def build_parser():
     generate.add_argument("--ack", action="append", default=[], metavar="VAL-ID:OBJECT")
     generate.set_defaults(handler=_generate)
 
+    platformio = subs.add_parser("platformio", help="write a best-effort PlatformIO adapter")
+    platformio.add_argument("path", nargs="?", default="project.json")
+    platformio.add_argument("--output", default=None)
+    platformio.set_defaults(handler=_platformio)
+
     new = subs.add_parser("new", help="create a guided current-scope project composition")
     new.add_argument("--reference", choices=["climate-demo", "hw364a-oled-demo"], default="climate-demo")
     new.add_argument("--output", default="project.json")
@@ -71,7 +77,7 @@ def build_parser():
     new.set_defaults(handler=_new)
 
     for name, (help_text, phase) in COMMANDS.items():
-        if name in {"print-schema", "validate", "generate", "new"}:
+        if name in {"print-schema", "validate", "generate", "platformio", "new"}:
             continue
         sub = subs.add_parser(name, help=help_text)
         if name == "configure":
@@ -182,6 +188,18 @@ def _new(args):
         print("S3-S8: derived from the qualified reference composition")
         print("S9 review: validation and lock preview run at generate time")
     print(f"created: {output}")
+    return OK
+
+
+def _platformio(args):
+    project = Path(args.path).resolve()
+    output = Path(args.output).resolve() if args.output else project.parent / "code"
+    try:
+        path = write_platformio(project, output)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f"platformio: {error}", file=sys.stderr)
+        return VALIDATION_ERROR
+    print(f"platformio: {path}")
     return OK
 
 

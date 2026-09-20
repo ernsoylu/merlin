@@ -70,6 +70,30 @@ void Rte_EnvironmentalRead(const Rte_EnvironmentalSlotType *slot,
     SAMPLE_UNLOCK();
 }
 
+uint8_t Rte_EnvironmentalApplySubstitutes(
+    Rte_EnvironmentalDataType *sample,
+    const Rte_EnvironmentalSubstituteType *policy)
+{
+    if (sample == 0 || policy == 0) {
+        return 0U;
+    }
+    uint8_t applied = 0U;
+    float *values[3] = {
+        &sample->temperatureDegC, &sample->humidityPercent, &sample->pressurePa
+    };
+    const float substitutes[3] = {
+        policy->temperatureDegC, policy->humidityPercent, policy->pressurePa
+    };
+    for (uint8_t i = 0U; i < 3U; ++i) {
+        if (sample->quality[i] != RTE_QUALITY_VALID && policy->declared[i] != 0U) {
+            *values[i] = substitutes[i];
+            sample->quality[i] = RTE_QUALITY_SUBSTITUTED;
+            applied++;
+        }
+    }
+    return applied;
+}
+
 int Rte_EnvironmentalIsFresh(const Rte_EnvironmentalDataType *value,
                              int64_t nowUs, uint32_t maxAgeMs)
 {

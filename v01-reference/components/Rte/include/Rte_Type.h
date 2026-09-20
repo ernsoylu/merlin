@@ -11,7 +11,8 @@
 typedef enum {
     RTE_QUALITY_INITIAL = 0,
     RTE_QUALITY_VALID,
-    RTE_QUALITY_INVALID
+    RTE_QUALITY_INVALID,
+    RTE_QUALITY_SUBSTITUTED
 } Rte_QualityType;
 
 typedef struct {
@@ -26,6 +27,13 @@ typedef struct {
 typedef struct {
     Rte_EnvironmentalDataType value;
 } Rte_EnvironmentalSlotType;
+
+typedef struct {
+    uint8_t declared[3];
+    float temperatureDegC;
+    float humidityPercent;
+    float pressurePa;
+} Rte_EnvironmentalSubstituteType;
 
 #define RTE_XCORE_READ_RETRIES 3U
 
@@ -98,6 +106,9 @@ void Rte_EnvironmentalPublish(Rte_EnvironmentalSlotType *slot,
                               const Rte_EnvironmentalDataType *value);
 void Rte_EnvironmentalRead(const Rte_EnvironmentalSlotType *slot,
                            Rte_EnvironmentalDataType *out);
+uint8_t Rte_EnvironmentalApplySubstitutes(
+    Rte_EnvironmentalDataType *sample,
+    const Rte_EnvironmentalSubstituteType *policy);
 int Rte_EnvironmentalIsFresh(const Rte_EnvironmentalDataType *value,
                              int64_t nowUs, uint32_t maxAgeMs);
 void Rte_EnvironmentalXcorePublish(Rte_EnvironmentalXcoreSlotType *slot,

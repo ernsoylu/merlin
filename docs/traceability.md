@@ -29,3 +29,8 @@ The new modular scope and TST-OLED definitions are in [ecu-support.md](ecu-suppo
 | REQ-DISP-003 | Visible OLED acceptance and honest health reporting, including degradable init failure | §4.6, §8.3 | RTF-005/006 | HW-364A visible-pattern/health evidence; electrical fault cases deferred |
 | REQ-BOARD-001 | HW-364A auto-adds the ordinary SSD1306 instance and fixed bus resources exactly once | §2.3, §3.2, §5.3 | VAL-001/005/006/015/026 | `test_hw364a_board_default_is_idempotent`, allocation/validation negatives and fixture #1 |
 | REQ-DRV-001 | Device/ECU support advertised only for qualified combinations; generic ESP8266 chooses drivers explicitly | §2.2.1, §4.6, §8.3 | VAL-026 | target compatibility matrix, deferred-driver rejection and ESP8266/HW-364A fixture |
+| REQ-BSW-003 | BswM mode transitions are bounded, explicit and terminal after SHUTDOWN | §6.9, v1.1 Package 7L | — | `test_bswm` |
+| REQ-DATA-003 | Substitution is provider-owned, per-element declared, and distinct from VALID | §4.1, v1.1 Package 7L | interface schema | `test_environmental_substitutes` |
+| REQ-GEN-002 | Interrupted generation preserves the previous output tree | §3.3 | — | `test_failed_render_preserves_previous_output` |
+| REQ-GEN-003 | Current-scope generation remains within the 30-second 50-device/30-SWC/8-task NFR | §9, v1.1 Package 7L | — | `test_generator_capacity_fixture_is_under_nfr` |
+| REQ-GEN-004 | PlatformIO output is opt-in, unpinned and outside the reproducibility guarantee | §3.3, §4.6 | — | `test_platformio_export_is_explicitly_unpinned` |

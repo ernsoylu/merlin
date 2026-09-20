@@ -15,6 +15,32 @@ from .rte import resolve_connections
 from .validate import assert_valid, validation_report, warning_record
 
 
+def write_platformio(project_path: str | Path, output_dir: str | Path) -> Path:
+    """Write the explicitly best-effort, unpinned PlatformIO adapter."""
+    model = assert_valid(project_path)
+    target = model["project"]["target"]
+    ecu = target["ecu"]
+    platform = "espressif32" if ecu == "esp32" else "espressif8266"
+    board_name = str(target.get("board", "")).lower()
+    board = "esp32dev" if "hw394" in board_name else "esp01_1m" if "hw364a" in board_name else "generic"
+    output = Path(output_dir).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    path = output / "platformio.ini"
+    path.write_text(
+        "; Merlin best-effort PlatformIO output; dependencies are intentionally unpinned.\n"
+        "; This adapter is outside the reproducibility guarantee.\n"
+        "[platformio]\n"
+        "default_envs = merlin\n\n"
+        "[env:merlin]\n"
+        f"platform = {platform}\n"
+        f"board = {board}\n"
+        "framework = espidf\n"
+        "src_dir = main\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _ignore(path: str, names: list[str]) -> set[str]:
     return {name for name in names if name in {"build", "sdkconfig", "project.lock", "__pycache__"}}
 

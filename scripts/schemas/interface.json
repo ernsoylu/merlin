@@ -4,6 +4,6 @@
   "title": "Merlin interface manifest",
   "type": "object",
   "required": ["schemaVersion", "interface"],
-  "properties": { "schemaVersion": { "const": "2.2.0" }, "interface": { "type": "object", "required": ["name", "version", "kind"], "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "kind": { "enum": ["sample-group", "event", "state", "parameter"] }, "elements": { "type": "array" }, "metadata": { "type": "array" } }, "additionalProperties": true } },
+  "properties": { "schemaVersion": { "const": "2.2.0" }, "interface": { "type": "object", "required": ["name", "version", "kind"], "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "kind": { "enum": ["sample-group", "event", "state", "parameter"] }, "elements": { "type": "array", "items": { "type": "object", "required": ["name", "type"], "properties": { "name": { "type": "string" }, "type": { "type": "string" }, "substitute": { "not": { "type": "null" } } }, "additionalProperties": true } }, "metadata": { "type": "array" } }, "additionalProperties": true } },
   "additionalProperties": false
 }

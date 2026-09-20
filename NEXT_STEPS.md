@@ -34,7 +34,7 @@ simulation provider only.
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
-| 7 | v1.1 | — | **started; Packages 7A–7K async-bus, event-port, IRQ-task, cross-core sample, NvM, calibration/XCP, overlay, TWAI, ICU, and GPTimer contracts complete** |
+| 7 | v1.1 | — | **software package complete through 7L; physical timing, electrical and external-device evidence remains deferred** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -867,6 +867,23 @@ configuration rejection and unavailable-target behavior; the ESP32 component
 compiles against the installed SDK. Task-wrapper integration, ISR whole-graph
 IRAM audit, release jitter, and physical timing qualification remain deferred.
 
+### Package 7L — software closure and release preparation — 2026-09-20
+
+Complete for the current software-only scope. BswM now provides a bounded,
+heap-free mode contract with STARTUP, RUN, DEGRADED, SAFE_HALT and terminal
+SHUTDOWN transitions. The RTE substitution policy is explicit: the provider
+owns substitution, only per-element declarations permit replacement, and the
+consumer receives `RTE_QUALITY_SUBSTITUTED` rather than `VALID`. The generator
+also has an opt-in PlatformIO adapter that is intentionally unpinned and
+outside the reproducibility guarantee.
+
+The existing deterministic fixture, atomic interrupted-render, provider-swap,
+negative compile and 50-device/30-SWC/8-task NFR checks are grouped in a
+dedicated CI generator-gates job. Golden output and traceability now cover the
+7L additions. QEMU remains available for the existing ESP32 GPIO/UART/timer
+scenarios; it is not treated as an I2C, OLED, PCNT signal, GPTimer jitter or
+electrical fixture. No physical claim is closed by this package.
+
 1. **Async bus transfers with a synchronous bounded facade** — lifts VAL-019,
    the co-location rule, which is the largest artificial constraint in v1.0.
    Reintroduces real mutex contention, so `lockTimeoutMs` starts being charged
@@ -890,10 +907,9 @@ IRAM audit, release jitter, and physical timing qualification remain deferred.
    that the port model was right. Settles open point §12.2.
 7. **Overlays** — per-project wiring deltas as the fourth tier.
 8. **Twai**, **Icu/PCNT subset**, **GPTimer release option**, **BswM-style mode
-   management**, **PlatformIO output** (explicitly unpinned, best-effort,
-   outside the reproducibility guarantee).
-9. Settle open point §12.4 — substitute-value policy and who owns substitution
-   on INVALID.
+   management**, and **PlatformIO output** are now covered by 7I–7L.
+9. **Substitute-value policy** is settled by 7L: provider-owned, declaration
+   required, and never reported as `VALID`.
 
 ---
 

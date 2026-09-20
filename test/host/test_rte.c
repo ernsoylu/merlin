@@ -76,6 +76,26 @@ static void test_environmental_freshness(void)
     assert(!Rte_EnvironmentalIsFresh(0, 1000000, 50U));
 }
 
+static void test_environmental_substitutes(void)
+{
+    Rte_EnvironmentalDataType sample = valid_sample(1000000);
+    Rte_EnvironmentalSubstituteType policy = {
+        .declared = {1U, 0U, 1U},
+        .temperatureDegC = 20.0f,
+        .humidityPercent = 50.0f,
+        .pressurePa = 101325.0f
+    };
+    sample.quality[0] = RTE_QUALITY_INVALID;
+    sample.quality[1] = RTE_QUALITY_INITIAL;
+    assert(Rte_EnvironmentalApplySubstitutes(&sample, &policy) == 1U);
+    assert(sample.temperatureDegC == 20.0f);
+    assert(sample.quality[0] == RTE_QUALITY_SUBSTITUTED);
+    assert(sample.quality[1] == RTE_QUALITY_INITIAL);
+    assert(sample.quality[2] == RTE_QUALITY_VALID);
+    assert(Rte_EnvironmentalApplySubstitutes(0, &policy) == 0U);
+    assert(Rte_EnvironmentalApplySubstitutes(&sample, 0) == 0U);
+}
+
 static void test_environmental_xcore_slot(void)
 {
     Rte_EnvironmentalXcoreSlotType slot = {0};
@@ -151,6 +171,7 @@ int main(void)
     test_scalar_sample();
     test_environmental_slot();
     test_environmental_freshness();
+    test_environmental_substitutes();
     test_environmental_xcore_slot();
     test_event_queue();
     return 0;

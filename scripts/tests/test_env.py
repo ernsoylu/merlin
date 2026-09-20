@@ -58,6 +58,16 @@ def test_every_spec_command_is_registered():
     assert set(action.choices) == set(cli.COMMANDS) | {"check-env"}
 
 
+def test_platformio_export_is_explicitly_unpinned(tmp_path):
+    source = Path(__file__).resolve().parents[2] / "scripts/tests/fixtures/00-climate-demo/project.json"
+    output = tmp_path / "code"
+    assert cli.main(["platformio", str(source), "--output", str(output)]) == cli.OK
+    content = (output / "platformio.ini").read_text()
+    assert "best-effort" in content
+    assert "platform = espressif32" in content
+    assert "board = esp32dev" in content
+
+
 def test_current_scope_manifests_validate():
     root = Path(__file__).resolve().parents[2]
     assert validate_manifest(root / "interfaces/monochrome-frame.json", "interface") == []
