@@ -11,6 +11,7 @@
 
 #include "DisplayDemo.h"
 #include "Mcal_Gpt.h"
+#include "Mcal_Mcu.h"
 #include "Mcal_I2c.h"
 #include "Mcal_Wdg.h"
 #include "Mcal_Wlan.h"
@@ -310,7 +311,7 @@ static void display_task(void *argument)
         if (activation == 2U) {
             printf("{\"fault_inject\":\"AUTO_RESET\",\"bootLoopCounter\":%u}\n",
                    (unsigned)*bootLoopCounter);
-            esp_restart();
+            (void)Mcal_Mcu_Reset();
         }
 #endif
 
@@ -335,15 +336,18 @@ static void display_task(void *argument)
 void app_main(void)
 {
     static RTC_DATA_ATTR uint32_t bootLoopCounter;
+    Mcal_McuResetReasonType resetReason = MCAL_MCU_RESET_UNKNOWN;
+
+    (void)Mcal_Mcu_GetResetReason(&resetReason);
 
     if (bootLoopCounter >= HW364A_MAX_BOOT_RESETS) {
         printf("{\"system\":\"SAFE_HALT\",\"reason\":\"BOOT_LOOP\",\"resets\":%u,\"resetReason\":%d}\n",
-               (unsigned)bootLoopCounter, (int)esp_reset_reason());
+               (unsigned)bootLoopCounter, (int)resetReason);
         return;
     }
     bootLoopCounter++;
     printf("{\"boot\":\"start\",\"bootLoopCounter\":%u,\"resetReason\":%d}\n",
-           (unsigned)bootLoopCounter, (int)esp_reset_reason());
+           (unsigned)bootLoopCounter, (int)resetReason);
 
     /* This SDK build has configSUPPORT_STATIC_ALLOCATION disabled, so task
      * creation here is a one-time heap allocation at boot -- not the

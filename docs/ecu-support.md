@@ -44,10 +44,11 @@ be rejected before generation; no empty driver stubs may count as support.
 | `ssd1306` device driver | Compatible via MCAL I2c; external wiring and panel configuration required | Compatible via MCAL I2c; explicit instance/wiring | Same driver, automatically instantiated by board defaults |
 | `bme280` device driver | Simulation/compensation path only; external transport deferred | Deferred; requires exact sensor and physical tests | Deferred external sensor; shared-bus qualification follows hardware availability |
 | Port/Dio, I2c, Uart | DIO/UART contracts added; target evidence pending | I2C baseline implemented; UART and remaining services are not qualified | Reuses generic ESP8266 services |
+| Mcu reset/reset reason | `Mcal_Mcu` maps the SDK reason to a portable code and owns `esp_restart`; builds, target evidence pending | Same adapter, same reason codes; retained boot-loop storage is still SDK-specific and unproven | Reuses generic ESP8266 adapter |
 | Time/GPT/watchdog, Os/EcuM | GPT timebase and watchdog contracts added; target evidence pending | ESP8266 GPT/watchdog adapters are in the OLED path; qualification pending | Reuses generic ESP8266 adapters |
 | Pwm/IoHwAb fan | Required by climate reference; pending | Native ESP8266 PWM adapter builds and has host contract coverage; output qualification pending | Same restriction as generic ESP8266 |
 | SPI/RMT | Target-specific qualification pending | HSPI capability only; CSPI is flash-reserved and RMT is unsupported | HSPI pins conflict with the onboard OLED |
-| WLAN/BT capability | Explicit capability contract; backend not yet qualified | Native WLAN init/start/stop hook passed opt-in smoke; default disabled; Bluetooth remains unsupported | Same restriction as generic ESP8266 |
+| WLAN/BT capability | Explicit capability contract; the ESP-IDF 5.2.3 `esp_netif` backend now compiles, target evidence pending | Native WLAN init/start/stop hook passed opt-in smoke; default disabled; Bluetooth remains unsupported | Same restriction as generic ESP8266 |
 | Other catalog modules | Selectable only after target-specific qualification | No inheritance of ESP32 peripheral inventory | Same restriction as generic ESP8266 |
 
 SSD1306 addressing/command generation and BME280 compensation/state machines

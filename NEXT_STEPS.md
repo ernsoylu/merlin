@@ -356,9 +356,12 @@ Each step adds one thing that can be wrong, so a failure localises itself.
    feeds the watchdog through an MCAL adapter, and OLED timing now uses the
    shared MCAL GPT microsecond timebase. The existing PWM adapter now also
    compiles against the ESP8266 native PWM API with host contract coverage.
-   Complete target validation and remaining adapters for Mcu/Port/I2c as
-   applicable, plus Os/EcuM/Hm/Det/Log/Rte integration and capability
-   reporting.
+   Port and I2c now validate their arguments with host coverage, and the new
+   `Mcal_Mcu` adapter owns reset and reset-reason mapping for both backends --
+   EcuM and the HW-364A main no longer call `esp_restart`/`esp_reset_reason`
+   directly. Retained (RTC) boot-loop storage is still SDK-specific in BSW and
+   needs a hardware session to qualify on ESP8266. Complete target validation,
+   plus Os/EcuM/Hm/Det/Log/Rte integration and capability reporting.
 2. **Hardware-peripheral drivers — active.** The ESP8266 PWM adapter is the
    first target-specific peripheral path; it is build-validated but not flashed
    or driven on an unconnected output. The ESP8266 ADC capability wrapper is
@@ -371,6 +374,9 @@ Each step adds one thing that can be wrong, so a failure localises itself.
    ESP8266 until an SDK-backed path exists.
 3. **WLAN/BT services — capability boundary active.** The radio contract now
    exposes explicit WLAN/BT capability bits and rejects unsupported selection.
+   `Mcal_Wlan` now selects its stack/event-loop bring-up per SDK -- ESP8266
+   keeps `tcpip_adapter` and the legacy loop, ESP-IDF 5.2.3 uses `esp_netif`
+   and the default loop, which is what the removed component had broken.
    The ESP8266 native WLAN init/start/stop hook now compiles and passed an
    opt-in hardware smoke (`init=0`, `start=0`) while the default OLED image
    remains disabled. Next add explicit capability enablement, core/resource

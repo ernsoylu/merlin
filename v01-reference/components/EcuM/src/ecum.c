@@ -8,11 +8,11 @@
 #include "bme280.h"
 #include "ClimateController.h"
 #include "IoHwAb_Fan.h"
+#include "Mcal_Mcu.h"
 #include "Mcal_Port.h"
 #include "Mcal_Pwm.h"
 #include "Rte_Type.h"
 #include "esp_attr.h"
-#include "esp_system.h"
 #include "esp_timer.h"
 #endif
 
@@ -274,7 +274,7 @@ static void report_fault(void *argument, uint32_t fault, int64_t value)
             });
             /* Let the low-priority drain emit the forensic record before reboot. */
             vTaskDelay(pdMS_TO_TICKS(20U));
-            esp_restart();
+            (void)Mcal_Mcu_Reset();
         }
     }
 }
@@ -488,10 +488,11 @@ void EcuM_Startup(void)
     EcuM_ContextInit(&runtime.context, 0U);
     Log_RingInit(&runtime.log);
     runtime.context.bootLoopCounter = &bootLoopCounter;
-    const esp_reset_reason_t resetReason = esp_reset_reason();
+    Mcal_McuResetReasonType resetReason = MCAL_MCU_RESET_UNKNOWN;
+    (void)Mcal_Mcu_GetResetReason(&resetReason);
     const int64_t nowUs = esp_timer_get_time();
-    const int freshWindow = resetReason == ESP_RST_POWERON ||
-                            resetReason == ESP_RST_BROWNOUT ||
+    const int freshWindow = resetReason == MCAL_MCU_RESET_POWERON ||
+                            resetReason == MCAL_MCU_RESET_BROWNOUT ||
                             (nowUs - bootLoopWindowStartUs) > 300000000LL;
     if (freshWindow) {
         bootLoopCounter = 0U;
