@@ -54,16 +54,21 @@ Mcal_ResultType Mcal_Port_Write(int32_t pin, uint8_t level)
 Mcal_ResultType Mcal_Port_Init(const Mcal_PortPinConfigType *pins,
                                uint16_t count)
 {
-    (void)pins;
-    (void)count;
+    if (pins == 0 || count == 0U) {
+        return MCAL_INVALID_ARG;
+    }
+    for (uint16_t i = 0; i < count; ++i) {
+        if (pins[i].pin < 0 || pins[i].output > 1U ||
+            pins[i].initialLevel > 1U) {
+            return MCAL_INVALID_ARG;
+        }
+    }
     return MCAL_HW_FAIL;
 }
 
 Mcal_ResultType Mcal_Port_Write(int32_t pin, uint8_t level)
 {
-    (void)pin;
-    (void)level;
-    return MCAL_HW_FAIL;
+    return pin < 0 || level > 1U ? MCAL_INVALID_ARG : MCAL_HW_FAIL;
 }
 
 #endif

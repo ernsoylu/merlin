@@ -148,8 +148,12 @@ Mcal_I2cInterfaceType Mcal_I2c_GetInterface(Mcal_I2cHandleType *handle)
 Mcal_ResultType Mcal_I2c_Init(Mcal_I2cHandleType *handle,
                               const Mcal_I2cConfigType *config)
 {
-    (void)handle;
-    (void)config;
+    if (handle == 0 || config == 0 || config->port < 0 ||
+        config->sdaPin < 0 || config->sclPin < 0 ||
+        config->frequencyHz == 0U || config->timeoutMs == 0U ||
+        config->pullups > 1U) {
+        return MCAL_INVALID_ARG;
+    }
     return MCAL_HW_FAIL;
 }
 
@@ -160,8 +164,8 @@ Mcal_I2cInterfaceType Mcal_I2c_GetInterface(Mcal_I2cHandleType *handle)
 
 Mcal_ResultType Mcal_I2c_Recover(Mcal_I2cHandleType *handle)
 {
-    (void)handle;
-    return MCAL_HW_FAIL;
+    return handle == 0 || !handle->initialized
+        ? MCAL_INVALID_ARG : MCAL_HW_FAIL;
 }
 
 #endif
