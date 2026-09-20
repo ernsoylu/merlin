@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 
-from scripts.wizard.core.model import load_project
+from scripts.wizard.core.model import load_project, resource_claims
 from scripts.wizard.core.allocate import validate_target_claims
 
 
@@ -28,3 +28,19 @@ def test_generic_esp8266_has_no_implicit_oled():
         assert validate_target_claims(model) == []
     finally:
         temporary.unlink()
+
+
+def test_overlay_claim_is_added_to_allocation(tmp_path):
+    overlay = tmp_path / "overlay.json"
+    overlay.write_text(json.dumps({
+        "schemaVersion": "2.2.0",
+        "overlay": {"name": "lab-header", "claims": [{"resource": "IO4"}]},
+    }))
+    data = json.loads((ROOT / "scripts/tests/fixtures/00-climate-demo/project.json").read_text())
+    data["target"]["overlays"] = [str(overlay)]
+    project = tmp_path / "project.json"
+    project.write_text(json.dumps(data))
+
+    model = load_project(project)
+    assert model["project"]["target"]["overlays"] == [str(overlay)]
+    assert {"resource": "IO4", "owner": "overlay:lab-header"} in resource_claims(model)

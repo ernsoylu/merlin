@@ -123,4 +123,14 @@ def resource_claims(model: dict) -> list[dict]:
             claims.append({"resource": f"PWM_CHANNEL{item['channel']}", "owner": item["instance"]})
     if project.get("target", {}).get("radio", {}).get("wifi"):
         claims.append({"resource": "WLAN", "owner": "radio"})
+    for overlay in model["manifests"].get("overlays", []):
+        definition = overlay["data"].get("overlay", {})
+        default_owner = f"overlay:{definition.get('name', '<unnamed>')}"
+        for item in definition.get("claims", []):
+            if not isinstance(item, dict) or not item.get("resource"):
+                continue
+            claim = {"resource": item["resource"], "owner": item.get("owner", default_owner)}
+            if item.get("share_key"):
+                claim["share_key"] = item["share_key"]
+            claims.append(claim)
     return claims

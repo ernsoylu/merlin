@@ -4,6 +4,6 @@
   "title": "Merlin board overlay",
   "type": "object",
   "required": ["schemaVersion", "overlay"],
-  "properties": { "schemaVersion": { "const": "2.2.0" }, "overlay": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } }, "additionalProperties": true } },
+  "properties": { "schemaVersion": { "const": "2.2.0" }, "overlay": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string", "minLength": 1 }, "claims": { "type": "array", "items": { "type": "object", "required": ["resource"], "properties": { "resource": { "type": "string", "minLength": 1 }, "owner": { "type": "string", "minLength": 1 }, "share_key": { "type": "string", "minLength": 1 } }, "additionalProperties": false } } }, "additionalProperties": false } },
   "additionalProperties": false
 }

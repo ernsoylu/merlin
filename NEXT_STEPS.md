@@ -34,7 +34,7 @@ simulation provider only.
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
-| 7 | v1.1 | — | **started; Packages 7A–7G async-bus, event-port, IRQ-task, cross-core sample, NvM, and calibration/XCP contracts complete** |
+| 7 | v1.1 | — | **started; Packages 7A–7H async-bus, event-port, IRQ-task, cross-core sample, NvM, calibration/XCP, and overlay contracts complete** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -826,6 +826,15 @@ explicit errors. Frame processing remains caller-owned so the existing UART
 MCAL is not duplicated. Standard XCP MTA compatibility, UART transport
 wiring, NvM persistence wiring, DAQ, and physical qualification remain
 deferred.
+
+### Package 7H — bounded overlay resource claims — 2026-09-20
+
+Complete for the current software-only scope. Overlay manifests may declare a
+bounded list of resource claims, each with a resource and optional owner or
+sharing key. The model adds those claims after project and board claims, so
+the existing allocation checker enforces the SoC ∧ module ∧ board ∧ overlay
+intersection and reports incompatible overlap. Automatic pin remapping,
+verified board variants, and physical qualification remain deferred.
 
 1. **Async bus transfers with a synchronous bounded facade** — lifts VAL-019,
    the co-location rule, which is the largest artificial constraint in v1.0.
