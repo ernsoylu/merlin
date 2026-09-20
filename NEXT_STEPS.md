@@ -34,7 +34,7 @@ simulation provider only.
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
-| 7 | v1.1 | — | **started; Packages 7A–7E async-bus, event-port, IRQ-task, and cross-core sample contracts complete** |
+| 7 | v1.1 | — | **started; Packages 7A–7F async-bus, event-port, IRQ-task, cross-core sample, and NvM contracts complete** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -804,6 +804,17 @@ retries. Readers return failure rather than spinning indefinitely while a writer
 is active. Host tests cover null arguments, an in-progress write, coherent
 publication/readback, and an even completed version. Target timing and
 multi-core contention evidence remain deferred.
+
+### Package 7F — bounded NvM contract — 2026-09-20
+
+Complete for the current software-only scope. `Nvm_BlockType` provides a fixed
+64-byte RAM mirror with dirty tracking, versioned records and CRC32 validation.
+`Nvm_WriteBlock` changes RAM only; `Nvm_WriteAll` performs the bounded backend
+write and watchdog disarm/re-arm callback. CRC or version failure restores
+defaults, marks quality INITIAL, and returns `NVM_CRC_INVALID` / RTF-007. Host
+tests use an in-memory backend; ESP32 provides an NVS blob backend. EcuM
+shutdown wiring, wear-budget measurement, and physical qualification remain
+deferred.
 
 1. **Async bus transfers with a synchronous bounded facade** — lifts VAL-019,
    the co-location rule, which is the largest artificial constraint in v1.0.
