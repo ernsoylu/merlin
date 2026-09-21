@@ -4,6 +4,33 @@ Updated 2026-09-21. This ledger distinguishes current host/QEMU/HW-394/HW-364A
 bring-up evidence from the acceptance campaign still required by
 PROJECT_DEFINITION.md §8.3.
 
+### 2026-09-21 SonarCloud static-analysis gate
+
+The SonarCloud automatic-analysis gate failed on new code with reliability E,
+security E and 67.0% duplicated lines. Reliability and security are now A:
+`Nvm` covered its CRC span and its payload copies through one clamp helper
+instead of indexing past fixed buffers, and the metadata renderer declares its
+escaping policy explicitly. This is static-analysis evidence over the reference
+sources; it is not a substitute for the host suite or for physical
+qualification, and no generated binary changed behavior.
+
+Two findings are configuration, recorded here so they are not re-litigated:
+
+- `scripts/tests/fixtures/**/expected/**` is excluded from analysis. Every
+  duplicated line was a §8.1 golden fixture mirroring `v01-reference/` byte for
+  byte, which is the harness working as designed. The fixture trees are already
+  asserted equal to the reference they copy, and the reference itself is
+  analysed, so nothing goes unchecked. Automatic analysis ignores
+  `sonar-project.properties`, so the exclusion lives in the project's
+  SonarCloud analysis scope rather than in the repository.
+- Both `pythonsecurity:S2083` path-traversal hits on `cli._edit_project` are
+  marked false positive. The tainted value is the manifest path the operator
+  typed on merlin's own command line, so there is no privilege boundary for a
+  traversal to cross. `_edit_project` still rejects anything that is not an
+  existing `.json` file before reading or rewriting it; confining the path to a
+  base directory would break editing a `project.json` outside the working
+  directory.
+
 ### 2026-09-21 Package 7N software-only closure
 
 `check-env --target all` passed with ESP-IDF 5.2.3, Espressif QEMU 9.0.0,
