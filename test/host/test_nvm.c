@@ -13,7 +13,7 @@ typedef struct {
 static Nvm_ResultType store_read(void *context, uint8_t *data,
                                  uint16_t capacity, uint16_t *length)
 {
-    StoreType *store = context;
+    const StoreType *store = context;
     if (store->length == 0U) {
         return NVM_NOT_FOUND;
     }

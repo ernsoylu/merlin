@@ -80,27 +80,32 @@ def load_project(path: str | Path) -> dict:
     }
 
 
-def resource_claims(model: dict) -> list[dict]:
-    project = model["project"]
+def _board_claims(board: dict) -> list[dict]:
     claims = []
-    board = model["manifests"]["board"]["data"].get("board", {})
-    fixed = board.get("fixedResourcesVerified", board.get("name") == "HW-364A")
-    board_names = {device.get("instance") for device in board.get("onboardDevices", [])}
-    if fixed:
-        for device in board.get("onboardDevices", []):
-            for pin in device.get("pins", {}).values():
-                claim = {"resource": pin, "owner": device["instance"]}
-                if device.get("bus"):
-                    claim["share_key"] = f"bus-pin:{device['bus']}"
-                claims.append(claim)
-            if "bus" in device:
-                claims.append({"resource": device["bus"], "owner": device["instance"], "share_key": "i2c-master"})
+    for device in board.get("onboardDevices", []):
+        for pin in device.get("pins", {}).values():
+            claim = {"resource": pin, "owner": device["instance"]}
+            if device.get("bus"):
+                claim["share_key"] = f"bus-pin:{device['bus']}"
+            claims.append(claim)
+        if "bus" in device:
+            claims.append({"resource": device["bus"], "owner": device["instance"], "share_key": "i2c-master"})
+    return claims
+
+
+def _bus_claims(project: dict) -> list[dict]:
+    claims = []
     for bus, config in project.get("buses", {}).items():
         for pin in config.get("pins", {}).values():
             claims.append({"resource": pin, "owner": bus, "share_key": f"bus-pin:{bus}"})
         claims.append({"resource": bus, "owner": bus, "share_key": "i2c-master"})
+    return claims
+
+
+def _device_claims(project: dict, skip: set) -> list[dict]:
+    claims = []
     for device in project.get("instances", {}).get("devices", []):
-        if not fixed and device.get("instance") in board_names:
+        if device.get("instance") in skip:
             continue
         bus = device.get("bus")
         if bus:
@@ -114,6 +119,11 @@ def resource_claims(model: dict) -> list[dict]:
             claims.append(claim)
         if device.get("pin"):
             claims.append({"resource": device["pin"], "owner": device["instance"]})
+    return claims
+
+
+def _iohwab_claims(project: dict) -> list[dict]:
+    claims = []
     for item in project.get("instances", {}).get("iohwab", []):
         if item.get("pin"):
             claims.append({"resource": item["pin"], "owner": item["instance"]})
@@ -121,9 +131,12 @@ def resource_claims(model: dict) -> list[dict]:
             claims.append({"resource": f"PWM_TIMER{item['timer']}", "owner": item["instance"], "share_key": f"pwm:{item.get('frequencyHz')}:{item.get('resolutionBits')}"})
         if item.get("channel") is not None:
             claims.append({"resource": f"PWM_CHANNEL{item['channel']}", "owner": item["instance"]})
-    if project.get("target", {}).get("radio", {}).get("wifi"):
-        claims.append({"resource": "WLAN", "owner": "radio"})
-    for overlay in model["manifests"].get("overlays", []):
+    return claims
+
+
+def _overlay_claims(overlays: list[dict]) -> list[dict]:
+    claims = []
+    for overlay in overlays:
         definition = overlay["data"].get("overlay", {})
         default_owner = f"overlay:{definition.get('name', '<unnamed>')}"
         for item in definition.get("claims", []):
@@ -133,4 +146,19 @@ def resource_claims(model: dict) -> list[dict]:
             if item.get("share_key"):
                 claim["share_key"] = item["share_key"]
             claims.append(claim)
+    return claims
+
+
+def resource_claims(model: dict) -> list[dict]:
+    project = model["project"]
+    board = model["manifests"]["board"]["data"].get("board", {})
+    fixed = board.get("fixedResourcesVerified", board.get("name") == "HW-364A")
+    board_names = {device.get("instance") for device in board.get("onboardDevices", [])}
+    claims = _board_claims(board) if fixed else []
+    claims += _bus_claims(project)
+    claims += _device_claims(project, set() if fixed else board_names)
+    claims += _iohwab_claims(project)
+    if project.get("target", {}).get("radio", {}).get("wifi"):
+        claims.append({"resource": "WLAN", "owner": "radio"})
+    claims += _overlay_claims(model["manifests"].get("overlays", []))
     return claims

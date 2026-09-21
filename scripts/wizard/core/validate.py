@@ -60,16 +60,19 @@ def _instances(project: dict, kind: str) -> dict[str, dict]:
     return {item.get("instance"): item for item in project.get("instances", {}).get(kind, []) if item.get("instance")}
 
 
+_UNNAMED = "<unnamed>"
+
+
 def _pin_assignments(project: dict) -> list[tuple[str, str, dict]]:
     result = []
     for item in project.get("instances", {}).get("devices", []):
         for pin in item.get("pins", {}).values():
-            result.append((str(pin), item.get("instance", "<unnamed>"), item))
+            result.append((str(pin), item.get("instance", _UNNAMED), item))
         if item.get("pin"):
-            result.append((str(item["pin"]), item.get("instance", "<unnamed>"), item))
+            result.append((str(item["pin"]), item.get("instance", _UNNAMED), item))
     for item in project.get("instances", {}).get("iohwab", []):
         if item.get("pin"):
-            result.append((str(item["pin"]), item.get("instance", "<unnamed>"), item))
+            result.append((str(item["pin"]), item.get("instance", _UNNAMED), item))
     return result
 
 
@@ -364,6 +367,26 @@ def _val_024(model: dict) -> list[str]:
     return [_issue("VAL-024", f"interface version mismatch for {item['interface']}") for item in resolved if item["interface"] in catalog and item.get("requiredVersion") and not _version_compatible(item.get("version", ""), item.get("requiredVersion", ""))]
 
 
+def _element_errors(item: dict, interface: dict) -> list[str]:
+    errors = []
+    provider_elements = {element.get("name"): element for element in (item.get("providerElements") or interface.get("elements", []))}
+    accepted_elements = {element.get("name"): element for element in (item.get("acceptedElements") or interface.get("elements", []))}
+    for name, provider in provider_elements.items():
+        accepted = accepted_elements.get(name)
+        if accepted is None:
+            errors.append(_issue("VAL-025", f"provider element {name} is not accepted by {item['to']}"))
+            continue
+        if provider.get("type") != accepted.get("type"):
+            errors.append(_issue("VAL-025", f"element type mismatch for {item['interface']}.{name}"))
+        if provider.get("unit", accepted.get("unit")) != accepted.get("unit", provider.get("unit")):
+            errors.append(_issue("VAL-025", f"element unit mismatch for {item['interface']}.{name}"))
+        source_range = provider.get("range")
+        accepted_range = accepted.get("acceptedRange", accepted.get("range"))
+        if source_range and accepted_range and (source_range[0] < accepted_range[0] or source_range[1] > accepted_range[1]):
+            errors.append(_issue("VAL-025", f"provider range exceeds consumer range for {item['interface']}.{name}"))
+    return errors
+
+
 def _val_025(model: dict) -> list[str]:
     catalog = _interface_catalog(model["root"])
     try:
@@ -373,23 +396,8 @@ def _val_025(model: dict) -> list[str]:
     errors = [_issue("VAL-025", f"unknown interface {item['interface']}") for item in resolved if item["interface"] not in catalog]
     for item in resolved:
         interface = catalog.get(item["interface"])
-        if interface is None:
-            continue
-        provider_elements = {element.get("name"): element for element in (item.get("providerElements") or interface.get("elements", []))}
-        accepted_elements = {element.get("name"): element for element in (item.get("acceptedElements") or interface.get("elements", []))}
-        for name, provider in provider_elements.items():
-            accepted = accepted_elements.get(name)
-            if accepted is None:
-                errors.append(_issue("VAL-025", f"provider element {name} is not accepted by {item['to']}"))
-                continue
-            if provider.get("type") != accepted.get("type"):
-                errors.append(_issue("VAL-025", f"element type mismatch for {item['interface']}.{name}"))
-            if provider.get("unit", accepted.get("unit")) != accepted.get("unit", provider.get("unit")):
-                errors.append(_issue("VAL-025", f"element unit mismatch for {item['interface']}.{name}"))
-            source_range = provider.get("range")
-            accepted_range = accepted.get("acceptedRange", accepted.get("range"))
-            if source_range and accepted_range and (source_range[0] < accepted_range[0] or source_range[1] > accepted_range[1]):
-                errors.append(_issue("VAL-025", f"provider range exceeds consumer range for {item['interface']}.{name}"))
+        if interface is not None:
+            errors.extend(_element_errors(item, interface))
     return errors
 
 
@@ -438,7 +446,7 @@ def validation_report(path: str | Path) -> dict[str, list[str]]:
     errors = [error.message for error in Draft202012Validator(schema).iter_errors(project)]
     errors.extend(model["conflicts"])
     errors.extend(error for rule in _ERROR_RULES for error in rule(model))
-    raw_warnings = sorted(set(warning for rule in _WARNING_RULES for warning in rule(model)))
+    raw_warnings = sorted({warning for rule in _WARNING_RULES for warning in rule(model)})
     accepted = project.get("acknowledgedWarnings", [])
     warnings = [warning for warning in raw_warnings if not _warning_acknowledged(warning, accepted)]
     return {"errors": sorted(set(errors)), "warnings": warnings, "acknowledgedWarnings": [warning for warning in raw_warnings if warning not in warnings]}

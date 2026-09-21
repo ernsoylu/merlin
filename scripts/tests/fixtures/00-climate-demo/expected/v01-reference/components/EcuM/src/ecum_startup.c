@@ -102,7 +102,10 @@ static void fake_prepare(EcuM_FakeI2cType *fake)
 
 static int fake_sensor_index(uint8_t address)
 {
-    return address == 0x76U ? 0 : address == 0x77U ? 1 : -1;
+    if (address == 0x76U) {
+        return 0;
+    }
+    return address == 0x77U ? 1 : -1;
 }
 
 static int fake_sensor_disconnected(const EcuM_FakeI2cType *fake,

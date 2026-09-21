@@ -11,47 +11,50 @@ def _endpoint(value: str) -> tuple[str, str]:
     return instance, port
 
 
+def _manifest(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
 def _manifest_ports(root: Path | None, project: dict) -> tuple[dict, dict]:
     providers = {}
     requires = {}
     if root is None:
         return providers, requires
     for item in project.get("instances", {}).get("devices", []):
-        path = root / "drivers" / item["type"] / f"{item['type']}.json"
-        if path.is_file():
-            manifest = json.loads(path.read_text(encoding="utf-8"))
-            for port in manifest.get("provides", []):
-                providers[(item["instance"], port["port"])] = dict(port)
+        manifest = _manifest(root / "drivers" / item["type"] / f"{item['type']}.json")
+        for port in manifest.get("provides", []):
+            providers[(item["instance"], port["port"])] = dict(port)
     for item in project.get("instances", {}).get("swcs", []):
         name = item["type"].lower()
-        path = root / "handcode" / name / f"{name}.json"
-        if path.is_file():
-            manifest = json.loads(path.read_text(encoding="utf-8"))
-            ports = manifest.get("ports", {})
-            for port in ports.get("provides", []):
-                providers[(item["instance"], port["port"])] = dict(port)
-            for port in ports.get("requires", []):
-                requires[(item["instance"], port["port"])] = dict(port)
+        ports = _manifest(root / "handcode" / name / f"{name}.json").get("ports", {})
+        for port in ports.get("provides", []):
+            providers[(item["instance"], port["port"])] = dict(port)
+        for port in ports.get("requires", []):
+            requires[(item["instance"], port["port"])] = dict(port)
     return providers, requires
+
+
+# Providers the current-scope reference types supply without a manifest entry.
+_IMPLICIT_PROVIDERS = {
+    ("devices", "bme280", "Env"): {"interface": "EnvironmentalData", "interfaceVersion": "1.1.0"},
+    ("devices", "ssd1306", "Health"): {"interface": "HealthReport", "interfaceVersion": "1.0.0"},
+    ("devices", "ssd1306", "Frame"): {"interface": "MonochromeFrame", "interfaceVersion": "1.0.0"},
+    ("swcs", "ClimateController", "FanOut"): {"interface": "PwmDutyCycle", "interfaceVersion": "1.0.0"},
+    ("swcs", "DisplayDemo", "DisplayOut"): {"interface": "MonochromeFrame", "interfaceVersion": "1.0.0"},
+}
+
+
+def _add_implicit_providers(project: dict, providers: dict) -> None:
+    for (kind, kind_type, port), definition in _IMPLICIT_PROVIDERS.items():
+        for item in project.get("instances", {}).get(kind, []):
+            if item.get("type") == kind_type:
+                providers.setdefault((item["instance"], port), dict(definition))
 
 
 def resolve_connections(project: dict, root: str | Path | None = None) -> list[dict]:
     """Resolve the explicit connection list without guessing providers."""
     providers, requires = _manifest_ports(Path(root) if root else None, project)
-    for device in project.get("instances", {}).get("devices", []):
-        typ = device.get("type")
-        if (device["instance"], "Env") not in providers and typ == "bme280":
-            providers[(device["instance"], "Env")] = {"interface": "EnvironmentalData", "interfaceVersion": "1.1.0"}
-        if (device["instance"], "Health") not in providers and typ == "ssd1306":
-            providers[(device["instance"], "Health")] = {"interface": "HealthReport", "interfaceVersion": "1.0.0"}
-        if (device["instance"], "Frame") not in providers and typ == "ssd1306":
-            providers[(device["instance"], "Frame")] = {"interface": "MonochromeFrame", "interfaceVersion": "1.0.0"}
-    for swc in project.get("instances", {}).get("swcs", []):
-        typ = swc.get("type")
-        if (swc["instance"], "FanOut") not in providers and typ == "ClimateController":
-            providers[(swc["instance"], "FanOut")] = {"interface": "PwmDutyCycle", "interfaceVersion": "1.0.0"}
-        if (swc["instance"], "DisplayOut") not in providers and typ == "DisplayDemo":
-            providers[(swc["instance"], "DisplayOut")] = {"interface": "MonochromeFrame", "interfaceVersion": "1.0.0"}
+    _add_implicit_providers(project, providers)
     resolved = []
     used_targets = set()
     for connection in project.get("connections", []):

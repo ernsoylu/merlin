@@ -1,5 +1,6 @@
 #include "Nvm.h"
 
+#include <stddef.h>
 #include <string.h>
 
 #define NVM_RECORD_MAGIC 0x4D4E564DU
@@ -26,9 +27,15 @@ static uint32_t crc32(const uint8_t *data, uint16_t length)
 
 static uint32_t record_crc(const Nvm_RecordType *record)
 {
-    return crc32((const uint8_t *)&record->version,
+    /* Walk the record as one object: the covered span starts at `version` and
+       runs into `data`, so a pointer into a single member is out of bounds. */
+    const uint8_t *bytes = (const uint8_t *)record;
+    const uint16_t payload = record->length > NVM_BLOCK_MAX_BYTES
+                                 ? (uint16_t)NVM_BLOCK_MAX_BYTES
+                                 : record->length;
+    return crc32(&bytes[offsetof(Nvm_RecordType, version)],
                  (uint16_t)(sizeof(record->version) +
-                            sizeof(record->length) + record->length));
+                            sizeof(record->length) + payload));
 }
 
 static void restore_defaults(Nvm_BlockType *block)

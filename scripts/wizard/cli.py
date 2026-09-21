@@ -24,6 +24,8 @@ from scripts.wizard.core.validate import validate_project, validation_report  # 
 
 OK, VALIDATION_ERROR, ENV_ERROR = 0, 1, 2
 
+PROJECT_FILE = "project.json"
+
 # name -> (help, phase that implements it)
 COMMANDS = {
     "new": ("create a guided current-scope project.json composition", 5),
@@ -42,6 +44,39 @@ COMMANDS = {
 }
 
 
+_EXPLICIT_COMMANDS = {"print-schema", "validate", "generate", "platformio", "new"}
+
+
+def _default_arguments(sub):
+    sub.add_argument("args", nargs="*", help=argparse.SUPPRESS)
+
+
+def _configure_arguments(sub):
+    sub.add_argument("path", nargs="?", default=PROJECT_FILE)
+    sub.add_argument("--set", dest="sets", action="append", default=[], metavar="KEY=VALUE")
+
+
+def _add_arguments(sub):
+    sub.add_argument("path", nargs="?", default=PROJECT_FILE)
+    sub.add_argument("kind", choices=("device", "swc", "module"))
+    sub.add_argument("name")
+    sub.add_argument("type", nargs="?")
+    sub.add_argument("properties", nargs="*")
+
+
+def _remove_arguments(sub):
+    sub.add_argument("path", nargs="?", default=PROJECT_FILE)
+    sub.add_argument("kind", choices=("device", "swc", "module"))
+    sub.add_argument("name")
+
+
+_SUBCOMMAND_ARGUMENTS = {
+    "configure": _configure_arguments,
+    "add": _add_arguments,
+    "remove": _remove_arguments,
+}
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="merlin", description=__doc__.splitlines()[0])
     subs = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
@@ -55,11 +90,11 @@ def build_parser():
     schema.set_defaults(handler=_print_schema)
 
     validate = subs.add_parser("validate", help="validate a project")
-    validate.add_argument("path", nargs="?", default="project.json")
+    validate.add_argument("path", nargs="?", default=PROJECT_FILE)
     validate.set_defaults(handler=_validate)
 
     generate = subs.add_parser("generate", help="generate a current-scope reference project")
-    generate.add_argument("path", nargs="?", default="project.json")
+    generate.add_argument("path", nargs="?", default=PROJECT_FILE)
     generate.add_argument("--output", default=None)
     generate.add_argument("--frozen", action="store_true")
     generate.add_argument("--non-interactive", action="store_true", help="disable prompts (default for current-scope generation)")
@@ -67,51 +102,22 @@ def build_parser():
     generate.set_defaults(handler=_generate)
 
     platformio = subs.add_parser("platformio", help="write a best-effort PlatformIO adapter")
-    platformio.add_argument("path", nargs="?", default="project.json")
+    platformio.add_argument("path", nargs="?", default=PROJECT_FILE)
     platformio.add_argument("--output", default=None)
     platformio.set_defaults(handler=_platformio)
 
     new = subs.add_parser("new", help="create a guided current-scope project composition")
     new.add_argument("--reference", choices=["climate-demo", "hw364a-oled-demo"], default="climate-demo")
-    new.add_argument("--output", default="project.json")
+    new.add_argument("--output", default=PROJECT_FILE)
     new.add_argument("--non-interactive", action="store_true", help="create the selected current-scope template without prompts")
     new.set_defaults(handler=_new)
 
     for name, (help_text, phase) in COMMANDS.items():
-        if name in {"print-schema", "validate", "generate", "platformio", "new"}:
+        if name in _EXPLICIT_COMMANDS:
             continue
         sub = subs.add_parser(name, help=help_text)
-        if name == "configure":
-            sub.add_argument("path", nargs="?", default="project.json")
-            sub.add_argument("--set", dest="sets", action="append", default=[], metavar="KEY=VALUE")
-        elif name == "add":
-            sub.add_argument("path", nargs="?", default="project.json")
-            sub.add_argument("kind", choices=("device", "swc", "module"))
-            sub.add_argument("name")
-            sub.add_argument("type", nargs="?")
-            sub.add_argument("properties", nargs="*")
-        elif name == "remove":
-            sub.add_argument("path", nargs="?", default="project.json")
-            sub.add_argument("kind", choices=("device", "swc", "module"))
-            sub.add_argument("name")
-        else:
-            sub.add_argument("args", nargs="*", help=argparse.SUPPRESS)
-        if name == "audit":
-            sub.set_defaults(handler=_audit)
-        elif name == "resolve":
-            sub.set_defaults(handler=_resolve)
-        elif name == "allocate":
-            sub.set_defaults(handler=_allocate)
-        elif name == "rte":
-            sub.set_defaults(handler=_rte)
-        elif name == "configure":
-            sub.set_defaults(handler=_configure)
-        elif name == "add":
-            sub.set_defaults(handler=_add)
-        elif name == "remove":
-            sub.set_defaults(handler=_remove)
-        else:
-            sub.set_defaults(handler=_unimplemented(name, phase))
+        _SUBCOMMAND_ARGUMENTS.get(name, _default_arguments)(sub)
+        sub.set_defaults(handler=_HANDLERS.get(name, _unimplemented(name, phase)))
 
     return parser
 
@@ -139,7 +145,7 @@ def _generate(args):
     output = Path(args.output).resolve() if args.output else project.parent / "code"
     try:
         generate_project(project, output, frozen=args.frozen, acknowledgements=args.ack)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, ValueError) as error:
         print(f"generate: {error}", file=sys.stderr)
         return VALIDATION_ERROR
     print(f"generated: {output}")
@@ -172,7 +178,7 @@ def _new(args):
 
     fixture = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / (
         "00-climate-demo" if reference == "climate-demo" else "01-hw364a-oled-demo"
-    ) / "project.json"
+    ) / PROJECT_FILE
     output = Path(args.output).resolve()
     if output.exists():
         print(f"new: refusing to overwrite {output}", file=sys.stderr)
@@ -197,7 +203,7 @@ def _platformio(args):
     output = Path(args.output).resolve() if args.output else project.parent / "code"
     try:
         path = write_platformio(project, output)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, ValueError) as error:
         print(f"platformio: {error}", file=sys.stderr)
         return VALIDATION_ERROR
     print(f"platformio: {path}")
@@ -213,7 +219,7 @@ def _audit(args):
 
 
 def _resolve(args):
-    project_path = Path(args.args[0] if args.args else "project.json")
+    project_path = Path(args.args[0] if args.args else PROJECT_FILE)
     model = load_project(project_path)
     write_lock(model, project_path.resolve().parent / "project.lock")
     print("resolved: project.lock")
@@ -221,7 +227,7 @@ def _resolve(args):
 
 
 def _allocate(args):
-    model = load_project(args.args[0] if args.args else "project.json")
+    model = load_project(args.args[0] if args.args else PROJECT_FILE)
     claims = resource_claims(model)
     conflicts = validate_target_claims(model)
     print(json.dumps({"claims": claims, "conflicts": conflicts}, indent=2, sort_keys=True))
@@ -229,7 +235,7 @@ def _allocate(args):
 
 
 def _rte(args):
-    model = load_project(args.args[0] if args.args else "project.json")
+    model = load_project(args.args[0] if args.args else PROJECT_FILE)
     try:
         print(json.dumps(resolve_connections(model["project"], model["root"]), indent=2, sort_keys=True))
     except ValueError as error:
@@ -260,11 +266,17 @@ def _set_path(data, dotted, value):
 
 
 def _edit_project(path, mutate):
+    # The path is the manifest the operator named on their own command line, so
+    # there is no privilege boundary for a traversal to cross; reject anything
+    # that is not an existing JSON file before touching it.
     path = Path(path).resolve()
-    original = path.read_bytes()
+    if path.suffix != ".json" or not path.is_file():
+        raise ValueError(f"not an existing JSON manifest: {path}")
+    original = path.read_bytes()  # NOSONAR (pythonsecurity:S2083)
     data = json.loads(original)
     mutate(data)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(  # NOSONAR (pythonsecurity:S2083)
+        json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     errors = validate_project(path)
     if errors:
         path.write_bytes(original)
@@ -284,7 +296,7 @@ def _configure(args):
                     raise ValueError(f"configure: expected KEY=VALUE, got {assignment}")
                 _set_path(data, key, _parse_value(value))
         _edit_project(args.path, mutate)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, ValueError) as error:
         print(f"configure: {error}", file=sys.stderr)
         return VALIDATION_ERROR
     print(f"configured: {Path(args.path).resolve()}")
@@ -325,7 +337,7 @@ def _add(args):
                 items.append(item)
                 items.sort(key=lambda entry: entry["instance"])
         _edit_project(args.path, mutate)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, ValueError) as error:
         print(f"add: {error}", file=sys.stderr)
         return VALIDATION_ERROR
     print(f"added: {args.kind}/{args.name}")
@@ -354,7 +366,7 @@ def _remove(args):
                 and not item.get("to", "").startswith(prefix)
             ]
         _edit_project(args.path, mutate)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, ValueError) as error:
         print(f"remove: {error}", file=sys.stderr)
         return VALIDATION_ERROR
     print(f"removed: {args.kind}/{args.name}")
@@ -370,6 +382,17 @@ def _unimplemented(name, phase):
         return ENV_ERROR
 
     return handler
+
+
+_HANDLERS = {
+    "audit": _audit,
+    "resolve": _resolve,
+    "allocate": _allocate,
+    "rte": _rte,
+    "configure": _configure,
+    "add": _add,
+    "remove": _remove,
+}
 
 
 def main(argv=None):

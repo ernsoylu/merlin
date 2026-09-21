@@ -26,10 +26,19 @@ static Cal_ResultType response(uint8_t *data, uint8_t capacity,
         data[1] = error;
     }
     *length = responseLength;
-    return error == 0U ? CAL_OK :
-           error == CAL_XCP_ERR_NOT_CONNECTED ? CAL_NOT_CONNECTED :
-           error == CAL_XCP_ERR_OUT_OF_RANGE ? CAL_RANGE_ERROR :
-           error == CAL_XCP_ERR_CMD_UNKNOWN ? CAL_UNKNOWN_COMMAND : CAL_INVALID;
+    if (error == 0U) {
+        return CAL_OK;
+    }
+    if (error == CAL_XCP_ERR_NOT_CONNECTED) {
+        return CAL_NOT_CONNECTED;
+    }
+    if (error == CAL_XCP_ERR_OUT_OF_RANGE) {
+        return CAL_RANGE_ERROR;
+    }
+    if (error == CAL_XCP_ERR_CMD_UNKNOWN) {
+        return CAL_UNKNOWN_COMMAND;
+    }
+    return CAL_INVALID;
 }
 
 static Cal_ResultType require_connected(Cal_ContextType *context,
@@ -135,7 +144,7 @@ Cal_ResultType Cal_XcpProcess(Cal_ContextType *context,
                               responseLength) != CAL_OK) {
             return CAL_NOT_CONNECTED;
         }
-        Cal_ParameterType *parameter = find_parameter(
+        const Cal_ParameterType *parameter = find_parameter(
             context, (uint16_t)request[1] | (uint16_t)((uint16_t)request[2] << 8U));
         if (parameter == 0 || responseCapacity < 5U) {
             return response(responseData, responseCapacity, responseLength,

@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .lock import sha256, write_lock
 from .model import expand_board_defaults, load_project, _load_target_manifests
@@ -22,7 +22,8 @@ def write_platformio(project_path: str | Path, output_dir: str | Path) -> Path:
     ecu = target["ecu"]
     platform = "espressif32" if ecu == "esp32" else "espressif8266"
     board_name = str(target.get("board", "")).lower()
-    board = "esp32dev" if "hw394" in board_name else "esp01_1m" if "hw364a" in board_name else "generic"
+    boards = {"hw394": "esp32dev", "hw364a": "esp01_1m"}
+    board = next((value for key, value in boards.items() if key in board_name), "generic")
     output = Path(output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
     path = output / "platformio.ini"
@@ -90,7 +91,8 @@ def _render_dynamic_metadata(stage: Path, model: dict) -> None:
         json.dumps(project, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     template_root = Path(__file__).resolve().parents[2] / "templates"
-    environment = Environment(loader=FileSystemLoader(template_root), autoescape=False, keep_trailing_newline=True)
+    environment = Environment(loader=FileSystemLoader(template_root),
+                          autoescape=select_autoescape(), keep_trailing_newline=True)
     rendered = environment.get_template("project_config.c.j2").render(
         name=project["project"]["name"],
         device_count=len(project.get("instances", {}).get("devices", [])),
@@ -120,7 +122,7 @@ endif()
             root_cmake.write_text(content.rstrip() + "\n" + audit, encoding="utf-8")
 
 
-def _warning_acceptance(model: dict, report: dict, requested: list[str] | None, lock_file: Path, frozen: bool) -> list[dict]:
+def _warning_acceptance(model: dict, report: dict, requested: list[str] | None, lock_file: Path) -> list[dict]:
     project = model["project"]
     all_warnings = report["warnings"] + report["acknowledgedWarnings"]
     available = [warning_record(warning) for warning in all_warnings]
@@ -148,6 +150,41 @@ def _warning_acceptance(model: dict, report: dict, requested: list[str] | None, 
     return [unique[key] for key in sorted(unique)]
 
 
+def _publish(source: Path, output: Path, model: dict, lock_file: Path, accepted_warnings: list[dict]) -> None:
+    """Swap a fully staged tree into place, or leave the previous one intact."""
+    parent = output.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".merlin-stage-", dir=parent))
+    backup_root = None
+    backup = None
+    replaced = False
+    try:
+        shutil.copytree(source, stage / "code", ignore=_ignore)
+        if not _is_golden_project(model["project"], model["root"]):
+            _render_dynamic_metadata(stage, model)
+        if output.exists():
+            backup_root = Path(tempfile.mkdtemp(prefix=".merlin-backup-", dir=parent))
+            backup = backup_root / "old"
+            output.replace(backup)
+        (stage / "code").replace(output)
+        replaced = True
+        write_lock(model, lock_file, accepted_warnings)
+        if backup_root is not None:
+            shutil.rmtree(backup_root)
+            backup_root = None
+    except Exception:
+        if replaced and output.exists():
+            shutil.rmtree(output)
+        if backup is not None and backup.exists():
+            backup.replace(output)
+        raise
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+        if backup_root is not None and backup_root.exists():
+            shutil.rmtree(backup_root)
+
+
 def generate_project(project_path: str | Path, output_dir: str | Path, frozen: bool = False, lock_path: str | Path | None = None, acknowledgements: list[str] | None = None) -> Path:
     model = assert_valid(project_path)
     report = validation_report(project_path)
@@ -173,36 +210,6 @@ def generate_project(project_path: str | Path, output_dir: str | Path, frozen: b
         drift = audit_lock(lock_file)
         if drift:
             raise ValueError("frozen lock drift:\n" + "\n".join(drift))
-    accepted_warnings = _warning_acceptance(model, report, acknowledgements, lock_file, frozen)
-    parent = output.parent
-    parent.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix=".merlin-stage-", dir=parent))
-    backup_root = None
-    backup = None
-    replaced = False
-    try:
-        shutil.copytree(source, stage / "code", ignore=_ignore)
-        if not _is_golden_project(model["project"], root):
-            _render_dynamic_metadata(stage, model)
-        if output.exists():
-            backup_root = Path(tempfile.mkdtemp(prefix=".merlin-backup-", dir=parent))
-            backup = backup_root / "old"
-            output.replace(backup)
-        (stage / "code").replace(output)
-        replaced = True
-        write_lock(model, lock_file, accepted_warnings)
-        if backup_root is not None:
-            shutil.rmtree(backup_root)
-            backup_root = None
-    except Exception:
-        if replaced and output.exists():
-            shutil.rmtree(output)
-        if backup is not None and backup.exists():
-            backup.replace(output)
-        raise
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
-        if backup_root is not None and backup_root.exists():
-            shutil.rmtree(backup_root)
+    accepted_warnings = _warning_acceptance(model, report, acknowledgements, lock_file)
+    _publish(source, output, model, lock_file, accepted_warnings)
     return output

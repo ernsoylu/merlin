@@ -19,34 +19,44 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+_GLOBBED_SOURCES = ("interfaces/*.json", "scripts/schemas/*.json", "scripts/templates/*")
+
+
+def _add_source(sources: dict, path: Path, lock_root: Path) -> None:
+    sources[os.path.relpath(path, lock_root)] = sha256(path)
+
+
+def _manifest_sources(model: dict, lock_root: Path, sources: dict) -> None:
+    for item in model["manifests"].values():
+        for entry in item if isinstance(item, list) else [item]:
+            _add_source(sources, Path(entry["path"]), lock_root)
+
+
+def _glob_sources(model: dict, lock_root: Path, sources: dict) -> None:
+    for pattern in _GLOBBED_SOURCES:
+        for path in sorted(model["root"].glob(pattern)):
+            if path.is_file():
+                _add_source(sources, path, lock_root)
+
+
+def _type_sources(model: dict, lock_root: Path, sources: dict) -> None:
+    instances = model["project"].get("instances", {})
+    types = [(item["type"], "drivers") for item in instances.get("devices", [])]
+    types += [(item["type"].lower(), "handcode") for item in instances.get("swcs", [])]
+    for name, folder in types:
+        path = model["root"] / folder / name / f"{name}.json"
+        if path.is_file():
+            _add_source(sources, path, lock_root)
+
+
 def make_lock(model: dict, lock_root: Path | None = None, accepted_warnings: list[dict] | None = None) -> dict:
     project_path = model["path"]
     lock_root = lock_root or model["project_dir"]
-    sources = {os.path.relpath(project_path, lock_root): sha256(project_path)}
-    for item in model["manifests"].values():
-        if isinstance(item, list):
-            for entry in item:
-                path = Path(entry["path"])
-                sources[os.path.relpath(path, lock_root)] = sha256(path)
-        else:
-            path = Path(item["path"])
-            sources[os.path.relpath(path, lock_root)] = sha256(path)
-    for path in sorted(model["root"].glob("interfaces/*.json")):
-        sources[os.path.relpath(path, lock_root)] = sha256(path)
-    for path in sorted(model["root"].glob("scripts/schemas/*.json")):
-        sources[os.path.relpath(path, lock_root)] = sha256(path)
-    for path in sorted(model["root"].glob("scripts/templates/*")):
-        if path.is_file():
-            sources[os.path.relpath(path, lock_root)] = sha256(path)
     project = model["project"]
-    for item in project.get("instances", {}).get("devices", []):
-        path = model["root"] / "drivers" / item["type"] / f"{item['type']}.json"
-        if path.is_file():
-            sources[os.path.relpath(path, lock_root)] = sha256(path)
-    for item in project.get("instances", {}).get("swcs", []):
-        path = model["root"] / "handcode" / item["type"].lower() / f"{item['type'].lower()}.json"
-        if path.is_file():
-            sources[os.path.relpath(path, lock_root)] = sha256(path)
+    sources = {os.path.relpath(project_path, lock_root): sha256(project_path)}
+    _manifest_sources(model, lock_root, sources)
+    _glob_sources(model, lock_root, sources)
+    _type_sources(model, lock_root, sources)
     return {
         "schemaVersion": "2.2.0",
         "generatorVersion": model["project"].get("generatorVersion", "0.1.0"),

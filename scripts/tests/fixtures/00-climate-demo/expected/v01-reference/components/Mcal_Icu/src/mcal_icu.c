@@ -16,9 +16,16 @@ Mcal_ResultType Mcal_Icu_ValidateConfig(const Mcal_IcuConfigType *config)
 
 static Mcal_ResultType map_error(esp_err_t error)
 {
-    return error == ESP_OK ? MCAL_OK :
-           error == ESP_ERR_INVALID_ARG ? MCAL_INVALID_ARG :
-           error == ESP_ERR_INVALID_STATE ? MCAL_BUSY : MCAL_HW_FAIL;
+    if (error == ESP_OK) {
+        return MCAL_OK;
+    }
+    if (error == ESP_ERR_INVALID_ARG) {
+        return MCAL_INVALID_ARG;
+    }
+    if (error == ESP_ERR_INVALID_STATE) {
+        return MCAL_BUSY;
+    }
+    return MCAL_HW_FAIL;
 }
 
 static bool on_watch_point(pcnt_unit_handle_t unit,

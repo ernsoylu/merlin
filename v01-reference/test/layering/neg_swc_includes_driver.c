@@ -1,8 +1,8 @@
+/* Layering control: an SWC must not reach the driver layer. The include itself
+   must fail, so nothing below it is ever compiled. */
 #include "bme280.h"
 
 int main(void)
 {
-    Bme280_InstanceType forbidden = {0};
-    (void)forbidden;
     return 0;
 }

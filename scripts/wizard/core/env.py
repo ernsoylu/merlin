@@ -145,6 +145,64 @@ def check_packages():
     return ok, ", ".join(results)
 
 
+def _esp32_rows(pins):
+    rows = []
+    idf = find_idf()
+    if idf is None:
+        rows.append(("esp32/esp-idf", False, f"{IDF_TOOL} not found (PATH, IDF_PATH, ~/esp/esp-idf)"))
+    else:
+        idf_python = find_idf_python() or Path(sys.executable)
+        found = parse_version(_run([str(idf_python), str(idf), "--version"]))
+        want = pins["ESP_IDF_VERSION"]
+        rows.append(("esp32/esp-idf", found == want, f"{found or 'unknown'} at {idf} (want {want})"))
+
+    gcc = f"{pins['GCC_PREFIX']}-gcc"
+    gcc_path = find_gcc(pins)
+    if gcc_path:
+        found = parse_version(_run([str(gcc_path), "--version"]))
+        rows.append(("esp32/toolchain", found is not None, f"{found or 'unknown'} at {gcc_path}"))
+    else:
+        rows.append(("esp32/toolchain", False, f"{gcc} not on PATH (source $IDF_PATH/export.sh)"))
+
+    qemu = find_qemu(pins)
+    if qemu is None:
+        rows.append(("esp32/qemu", False, "qemu-system-xtensa not found (idf_tools.py install qemu-xtensa)"))
+    else:
+        # A distro qemu-system-xtensa exists on many machines and has no esp32
+        # machine -- passing on presence alone is a false green.
+        has_esp32 = "esp32" in _run([str(qemu), "-machine", "help"]).lower()
+        found = parse_version(_run([str(qemu), "--version"]))
+        detail = f"{found} at {qemu}"
+        if not has_esp32:
+            detail += " -- no esp32 machine, not the Espressif build"
+        rows.append(("esp32/qemu", has_esp32, detail))
+    return rows
+
+
+def _esp8266_rows(pins):
+    rows = []
+    sdk = find_esp8266_sdk()
+    if sdk is None:
+        rows.append(("esp8266/sdk", False, "ESP8266_RTOS_SDK/export.sh not found (ESP8266_RTOS_SDK, ~/esp/ESP8266_RTOS_SDK)"))
+    else:
+        revision = _run(["git", "-C", str(sdk), "rev-parse", "HEAD"]).strip()
+        tag = _run(["git", "-C", str(sdk), "describe", "--tags", "--exact-match"]).strip()
+        want = pins["ESP8266_SDK_COMMIT"]
+        want_tag = f"v{pins['ESP8266_SDK_VERSION']}"
+        rows.append(("esp8266/sdk", revision == want and tag == want_tag,
+                     f"{sdk} {tag or 'untagged'} at {revision or 'unknown'} (want {want_tag}/{want})"))
+
+    prefix = pins["ESP8266_GCC_PREFIX"]
+    gcc_path = find_gcc(pins, prefix)
+    if gcc_path:
+        found = parse_version(_run([str(gcc_path), "--version"]))
+        want = pins["ESP8266_GCC_VERSION"]
+        rows.append(("esp8266/toolchain", found == want, f"{found or 'unknown'} at {gcc_path} (want {want})"))
+    else:
+        rows.append(("esp8266/toolchain", False, f"{prefix}-gcc not found (source ESP8266_RTOS_SDK/export.sh)"))
+    return rows
+
+
 def check_env(stream=sys.stdout, target="esp32"):
     """Report every finding, not just pass/fail.
 
@@ -152,62 +210,11 @@ def check_env(stream=sys.stdout, target="esp32"):
     row prints what was found and where it was found.
     """
     pins = load_toolchain()
-    rows = []
-
-    rows.append(("python", *check_python(pins)))
-    rows.append(("packages", *check_packages()))
-
+    rows = [("python", *check_python(pins)), ("packages", *check_packages())]
     if target in {"esp32", "all"}:
-        idf = find_idf()
-        if idf is None:
-            rows.append(("esp32/esp-idf", False, f"{IDF_TOOL} not found (PATH, IDF_PATH, ~/esp/esp-idf)"))
-        else:
-            idf_python = find_idf_python() or Path(sys.executable)
-            found = parse_version(_run([str(idf_python), str(idf), "--version"]))
-            want = pins["ESP_IDF_VERSION"]
-            rows.append(("esp32/esp-idf", found == want, f"{found or 'unknown'} at {idf} (want {want})"))
-
-        gcc = f"{pins['GCC_PREFIX']}-gcc"
-        gcc_path = find_gcc(pins)
-        if gcc_path:
-            found = parse_version(_run([str(gcc_path), "--version"]))
-            rows.append(("esp32/toolchain", found is not None, f"{found or 'unknown'} at {gcc_path}"))
-        else:
-            rows.append(("esp32/toolchain", False, f"{gcc} not on PATH (source $IDF_PATH/export.sh)"))
-
-        qemu = find_qemu(pins)
-        if qemu is None:
-            rows.append(("esp32/qemu", False, "qemu-system-xtensa not found (idf_tools.py install qemu-xtensa)"))
-        else:
-            # A distro qemu-system-xtensa exists on many machines and has no esp32
-            # machine -- passing on presence alone is a false green.
-            has_esp32 = "esp32" in _run([str(qemu), "-machine", "help"]).lower()
-            found = parse_version(_run([str(qemu), "--version"]))
-            detail = f"{found} at {qemu}"
-            if not has_esp32:
-                detail += " -- no esp32 machine, not the Espressif build"
-            rows.append(("esp32/qemu", has_esp32, detail))
-
+        rows += _esp32_rows(pins)
     if target in {"esp8266", "all"}:
-        sdk = find_esp8266_sdk()
-        if sdk is None:
-            rows.append(("esp8266/sdk", False, "ESP8266_RTOS_SDK/export.sh not found (ESP8266_RTOS_SDK, ~/esp/ESP8266_RTOS_SDK)"))
-        else:
-            revision = _run(["git", "-C", str(sdk), "rev-parse", "HEAD"]).strip()
-            tag = _run(["git", "-C", str(sdk), "describe", "--tags", "--exact-match"]).strip()
-            want = pins["ESP8266_SDK_COMMIT"]
-            want_tag = f"v{pins['ESP8266_SDK_VERSION']}"
-            rows.append(("esp8266/sdk", revision == want and tag == want_tag,
-                         f"{sdk} {tag or 'untagged'} at {revision or 'unknown'} (want {want_tag}/{want})"))
-
-        prefix = pins["ESP8266_GCC_PREFIX"]
-        gcc_path = find_gcc(pins, prefix)
-        if gcc_path:
-            found = parse_version(_run([str(gcc_path), "--version"]))
-            want = pins["ESP8266_GCC_VERSION"]
-            rows.append(("esp8266/toolchain", found == want, f"{found or 'unknown'} at {gcc_path} (want {want})"))
-        else:
-            rows.append(("esp8266/toolchain", False, f"{prefix}-gcc not found (source ESP8266_RTOS_SDK/export.sh)"))
+        rows += _esp8266_rows(pins)
 
     width = max(len(name) for name, _, _ in rows)
     for name, ok, detail in rows:
