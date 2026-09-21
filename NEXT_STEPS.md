@@ -106,6 +106,11 @@ SSD1306, real I2C or board electrical limits. Ask the owner to connect HW-394
 only when an ESP32 target build or target-specific evidence is the next
 unblocked check; until then HW-364A remains the only connected target.
 
+The executable physical test procedure is
+[docs/physical-qualification.md](docs/physical-qualification.md). It defines
+equipment, preparation, steps, expected outcomes, evidence and release
+sign-off for every remaining physical test.
+
 ### Current software boundary
 
 The current implementation validates the 2.2.0 project model, expands board
