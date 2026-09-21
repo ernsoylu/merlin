@@ -226,7 +226,7 @@ static void hm_observe_sequence(void)
     if (active != s_hmSequenceActive) {
         s_hmSequenceActive = active;
         printf("{\"hm\":\"sequence\",\"active\":%d,\"failed\":%u}\n",
-               active, (unsigned)s_hm.sequence.failed);
+               active, s_hm.sequence.failed);
     }
 }
 
