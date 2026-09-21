@@ -230,6 +230,32 @@ static void hm_observe_sequence(void)
     }
 }
 
+/* One activation's visible work: render the frame, hand it to the panel, then
+ * drive the bounded chunk transfers to completion. A submit or transfer fault
+ * is counted as RTF-006 rather than propagated -- the activation still owes the
+ * caller a deadline check and a watchdog feed. Stays inside the timed region. */
+static void render_frame_to_panel(void)
+{
+    DisplayDemo_Run(&s_demo);
+    const Rte_MonochromeFrameType *frame = DisplayDemo_GetFrame(&s_demo);
+    const Ssd1306_FrameViewType view = {
+        .width = frame->width, .height = frame->height,
+        .sequence = frame->sequence, .pixels = frame->pixels,
+        .pixelBytes = RTE_MONOCHROME_FRAME_BYTES
+    };
+    if (Ssd1306_SubmitFrame(&s_display, &view) != MCAL_OK) {
+        Hm_RuntimeRecordRtf(&s_hm, 6U);
+        print_status(&s_display);
+    }
+    while (s_display.activeValid) {
+        const uint32_t failures = s_display.transferFailures;
+        (void)Ssd1306_TransferChunk(&s_display);
+        if (s_display.transferFailures != failures) {
+            Hm_RuntimeRecordRtf(&s_hm, 6U);
+        }
+    }
+}
+
 /* Direct-to-task notification startup gate (PROJECT_DEFINITION §11): the
  * display task blocks immediately on creation and only proceeds once
  * app_main has finished bus/panel init and releases it. Watchdog subscription
@@ -271,24 +297,7 @@ static void display_task(void *argument)
         }
 
         const int64_t startUs = time_us();
-        DisplayDemo_Run(&s_demo);
-        const Rte_MonochromeFrameType *frame = DisplayDemo_GetFrame(&s_demo);
-        const Ssd1306_FrameViewType view = {
-            .width = frame->width, .height = frame->height,
-            .sequence = frame->sequence, .pixels = frame->pixels,
-            .pixelBytes = RTE_MONOCHROME_FRAME_BYTES
-        };
-        if (Ssd1306_SubmitFrame(&s_display, &view) != MCAL_OK) {
-            Hm_RuntimeRecordRtf(&s_hm, 6U);
-            print_status(&s_display);
-        }
-        while (s_display.activeValid) {
-            const uint32_t failures = s_display.transferFailures;
-            (void)Ssd1306_TransferChunk(&s_display);
-            if (s_display.transferFailures != failures) {
-                Hm_RuntimeRecordRtf(&s_hm, 6U);
-            }
-        }
+        render_frame_to_panel();
 
 #ifdef HW364A_INJECT_SLOW_ACTIVATION
         /* TST-OLED-08: one deliberately slow activation, above the 550 ms

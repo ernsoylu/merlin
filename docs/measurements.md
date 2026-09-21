@@ -14,6 +14,15 @@ escaping policy explicitly. This is static-analysis evidence over the reference
 sources; it is not a substitute for the host suite or for physical
 qualification, and no generated binary changed behavior.
 
+`display_task` was split: `render_frame_to_panel` now holds the submit and
+bounded-chunk-transfer loop, leaving the release, deadline, watchdog and
+boot-loop policy in the task. The call sits between the same `startUs` and
+`elapsedUs` reads, so the timed region is unchanged, and the ESP8266 image
+rebuilds clean. **This edits hardware-qualified source: the HW-364A bench
+evidence below predates the split and has not been re-run.** The image is not
+byte-reproducible across builds, so no binary-equivalence argument is offered
+in place of a bench run.
+
 Two findings are configuration, recorded here so they are not re-litigated:
 
 - `scripts/tests/fixtures/**/expected/**` is excluded from analysis. Every
