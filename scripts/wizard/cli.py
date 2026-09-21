@@ -272,10 +272,10 @@ def _edit_project(path, mutate):
     path = Path(path).resolve()
     if path.suffix != ".json" or not path.is_file():
         raise ValueError(f"not an existing JSON manifest: {path}")
-    original = path.read_bytes()  # NOSONAR (pythonsecurity:S2083)
+    original = path.read_bytes()
     data = json.loads(original)
     mutate(data)
-    path.write_text(  # NOSONAR (pythonsecurity:S2083)
+    path.write_text(
         json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     errors = validate_project(path)
     if errors:

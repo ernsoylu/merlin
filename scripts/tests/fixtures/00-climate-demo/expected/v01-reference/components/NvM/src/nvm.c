@@ -1,6 +1,5 @@
 #include "Nvm.h"
 
-#include <stddef.h>
 #include <string.h>
 
 #define NVM_RECORD_MAGIC 0x4D4E564DU
@@ -13,34 +12,39 @@ typedef struct {
     uint32_t crc;
 } Nvm_RecordType;
 
-static uint32_t crc32(const uint8_t *data, uint16_t length)
+static uint16_t clamp_length(uint16_t length)
 {
-    uint32_t crc = 0xFFFFFFFFU;
+    return length > NVM_BLOCK_MAX_BYTES ? (uint16_t)NVM_BLOCK_MAX_BYTES : length;
+}
+
+static uint32_t crc32_update(uint32_t crc, const uint8_t *data, uint16_t length)
+{
     for (uint16_t i = 0U; i < length; ++i) {
         crc ^= data[i];
         for (uint8_t bit = 0U; bit < 8U; ++bit) {
             crc = (crc >> 1U) ^ (0xEDB88320U & (0U - (crc & 1U)));
         }
     }
-    return ~crc;
+    return crc;
 }
 
+/* Cover version, length and the payload, member by member: the covered span is
+   contiguous, but walking it through one pointer would read past each member. */
 static uint32_t record_crc(const Nvm_RecordType *record)
 {
-    /* Walk the record as one object: the covered span starts at `version` and
-       runs into `data`, so a pointer into a single member is out of bounds. */
-    const uint8_t *bytes = (const uint8_t *)record;
-    const uint16_t payload = record->length > NVM_BLOCK_MAX_BYTES
-                                 ? (uint16_t)NVM_BLOCK_MAX_BYTES
-                                 : record->length;
-    return crc32(&bytes[offsetof(Nvm_RecordType, version)],
-                 (uint16_t)(sizeof(record->version) +
-                            sizeof(record->length) + payload));
+    const uint16_t payload = clamp_length(record->length);
+    uint32_t crc = 0xFFFFFFFFU;
+    crc = crc32_update(crc, (const uint8_t *)&record->version,
+                       (uint16_t)sizeof(record->version));
+    crc = crc32_update(crc, (const uint8_t *)&record->length,
+                       (uint16_t)sizeof(record->length));
+    crc = crc32_update(crc, record->data, payload);
+    return ~crc;
 }
 
 static void restore_defaults(Nvm_BlockType *block)
 {
-    (void)memcpy(block->data, block->defaults, block->length);
+    (void)memcpy(block->data, block->defaults, clamp_length(block->length));
     block->dirty = 1U;
     block->quality = NVM_QUALITY_INITIAL;
 }
@@ -80,7 +84,7 @@ Nvm_ResultType Nvm_LoadBlock(Nvm_BlockType *block,
         restore_defaults(block);
         return NVM_CRC_INVALID;
     }
-    (void)memcpy(block->data, record.data, block->length);
+    (void)memcpy(block->data, record.data, clamp_length(block->length));
     block->dirty = 0U;
     block->quality = NVM_QUALITY_VALID;
     return NVM_OK;
@@ -113,7 +117,7 @@ Nvm_ResultType Nvm_WriteAll(Nvm_BlockType *block,
         .version = block->version,
         .length = block->length
     };
-    (void)memcpy(record.data, block->data, block->length);
+    (void)memcpy(record.data, block->data, clamp_length(block->length));
     record.crc = record_crc(&record);
     if (backend->watchdog != 0) {
         backend->watchdog(backend->context, 0U);
