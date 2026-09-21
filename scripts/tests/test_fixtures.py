@@ -83,7 +83,8 @@ def test_comparator_detects_one_byte_change(tmp_path):
     (actual / "sample.txt").write_text("axc\n")
     diff = tree_diff(actual, expected)
     assert "changed: sample.txt" in diff
-    assert "-abc" in diff and "+axc" in diff
+    assert "-abc" in diff
+    assert "+axc" in diff
 
 
 def test_failed_render_preserves_previous_output(tmp_path, monkeypatch):
