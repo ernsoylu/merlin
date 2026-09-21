@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -17,6 +18,9 @@ def find_qemu() -> Path:
     if configured:
         candidates.append(Path(configured))
     candidates.append(Path.home() / ".espressif/tools/qemu-xtensa/esp_develop_9.0.0_20240606/qemu/bin/qemu-system-xtensa")
+    on_path = shutil.which("qemu-system-xtensa")
+    if on_path:
+        candidates.append(Path(on_path))
     for candidate in candidates:
         if candidate.is_file():
             return candidate

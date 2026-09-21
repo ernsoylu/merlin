@@ -1,8 +1,21 @@
 # Hardware evidence and measurement status
 
-Updated 2026-09-20. This ledger distinguishes current host/QEMU/HW-394/HW-364A
+Updated 2026-09-21. This ledger distinguishes current host/QEMU/HW-394/HW-364A
 bring-up evidence from the acceptance campaign still required by
 PROJECT_DEFINITION.md §8.3.
+
+### 2026-09-21 Package 7N software-only closure
+
+`check-env --target all` passed with ESP-IDF 5.2.3, Espressif QEMU 9.0.0,
+ESP8266 RTOS SDK v3.4 at commit
+`89a3f254b63819035f65d9c5dcdae8864f1a6a8a`, and GCC 8.4.0. The reproducible
+`scripts/ci/build_esp8266.sh` wrapper built `v01-hw364a-reference` without
+flashing. The shared GPTimer source now excludes ESP8266-only builds from the
+ESP-IDF `driver/gptimer.h` path while retaining the ESP32 implementation.
+The official `espressif/idf:release-v5.2` container built the ESP32 reference
+and passed `normal`, `fake-disconnect-recovery`, `stale-failsafe` and
+`deadline-skip` at three seconds each. This is software/build/QEMU evidence;
+it does not close physical qualification or retained-reset behavior in QEMU.
 
 ### 2026-09-20 ESP32 QEMU current-scope smoke
 

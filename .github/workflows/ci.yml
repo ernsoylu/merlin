@@ -45,3 +45,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./test/run_tests.sh
+
+  target-qemu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          docker run --rm -v "$PWD:/work" -w /work
+          espressif/idf:release-v5.2 bash -lc
+          'idf.py -C v01-reference build && python test/qemu/run_scenarios.py --seconds 3'

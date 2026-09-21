@@ -17,6 +17,8 @@ from scripts.wizard.core.validate import validate_manifest  # noqa: E402
 def test_toolchain_env_parses_and_pins_idf():
     pins = env.load_toolchain()
     assert pins["ESP_IDF_VERSION"] == "5.2.3"
+    assert pins["ESP8266_SDK_VERSION"] == "3.4"
+    assert pins["ESP8266_GCC_VERSION"] == "8.4.0"
     assert pins["PYTHON_MIN"] == "3.10"
     assert "#" not in "".join(pins)
 
@@ -35,6 +37,12 @@ def test_parse_version_handles_real_banners():
     assert env.parse_version("no version here") is None
     assert env.parse_version("") is None
     assert env.parse_version(None) is None
+
+
+def test_check_env_parser_selects_target_scope():
+    parser = cli.build_parser()
+    args = parser.parse_args(["check-env", "--target", "all"])
+    assert args.target == "all"
 
 
 def test_requirements_are_all_exactly_pinned():

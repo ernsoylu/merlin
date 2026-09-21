@@ -46,6 +46,7 @@ command spelling when extending it.
 ```bash
 ./install.sh [--dry-run]              # idempotent; pins IDF 5.2.3 + QEMU + python deps
 python scripts/wizard/cli.py check-env
+python scripts/wizard/cli.py check-env --target all
 python scripts/wizard/cli.py validate project.json
 python scripts/wizard/cli.py generate [--frozen] [--non-interactive]
 python scripts/wizard/cli.py audit    # lock hashes vs working tree; also a CMake pre-build target
@@ -57,6 +58,8 @@ pytest scripts/                       # generator tests, incl. golden-fixture co
 ( . ~/esp/esp-idf/export.sh && cd v01-reference && idf.py build )
 ( cd v01-hw364a-reference && IDF_PATH=~/esp/ESP8266_RTOS_SDK \
     PATH=~/esp/xtensa-lx106-elf/bin:~/esp/esp8266-venv/bin:$PATH make )
+# Equivalent reproducible ESP8266 build wrapper:
+scripts/ci/build_esp8266.sh
 ```
 
 Build both after touching anything under `v01-reference/components/`: the two

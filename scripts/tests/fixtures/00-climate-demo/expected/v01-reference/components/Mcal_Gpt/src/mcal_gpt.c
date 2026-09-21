@@ -11,7 +11,7 @@ Mcal_ResultType Mcal_Gptimer_ValidateConfig(const Mcal_GptimerConfigType *config
     return ticks == 0U || ticks > UINT64_MAX ? MCAL_INVALID_ARG : MCAL_OK;
 }
 
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM) && !defined(MERLIN_HW364A)
 
 #include "esp_timer.h"
 
@@ -33,7 +33,7 @@ Mcal_ResultType Mcal_Gpt_GetTimeUs(int64_t *timeUs)
 
 #endif
 
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM) && !defined(MERLIN_HW364A)
 
 #include "driver/gptimer.h"
 #include "esp_err.h"

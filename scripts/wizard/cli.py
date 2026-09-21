@@ -47,7 +47,8 @@ def build_parser():
     subs = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
     check = subs.add_parser("check-env", help="verify the toolchain against toolchain.env")
-    check.set_defaults(handler=lambda args: env.check_env())
+    check.add_argument("--target", choices=("esp32", "esp8266", "all"), default="esp32")
+    check.set_defaults(handler=lambda args: env.check_env(target=args.target))
 
     schema = subs.add_parser("print-schema", help="print one frozen JSON schema")
     schema.add_argument("name", nargs="?", default="project", choices=sorted({"project", "lock", "interface", "driver", "swc", "soc", "module", "board", "overlay"}))

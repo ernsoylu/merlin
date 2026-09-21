@@ -75,15 +75,24 @@ def find_qemu(pins):
     return Path(on_path) if on_path else None
 
 
-def find_gcc(pins):
+def find_gcc(pins, prefix=None):
     """Find the Espressif compiler even when export.sh has not been sourced."""
-    name = f"{pins['GCC_PREFIX']}-gcc"
-    tools = Path.home() / ESPRESSIF_DIR / "tools" / "xtensa-esp-elf"
+    prefix = prefix or pins["GCC_PREFIX"]
+    name = f"{prefix}-gcc"
+    tools = Path.home() / ESPRESSIF_DIR / "tools" / ("xtensa-esp-elf" if prefix == pins["GCC_PREFIX"] else prefix)
     found = sorted(tools.glob(f"**/bin/{name}"))
+    if prefix == pins.get("ESP8266_GCC_PREFIX"):
+        found.extend(sorted((Path.home() / "esp" / "xtensa-lx106-elf").glob(f"bin/{name}")))
     if found:
         return found[-1]
     on_path = shutil.which(name)
     return Path(on_path) if on_path else None
+
+
+def find_esp8266_sdk():
+    """Find the separately installed ESP8266 RTOS SDK without changing PATH."""
+    roots = [os.environ.get("ESP8266_RTOS_SDK"), Path.home() / "esp" / "ESP8266_RTOS_SDK"]
+    return next((Path(root) for root in roots if root and (Path(root) / "export.sh").is_file()), None)
 
 
 def find_idf_python():
@@ -136,7 +145,7 @@ def check_packages():
     return ok, ", ".join(results)
 
 
-def check_env(stream=sys.stdout):
+def check_env(stream=sys.stdout, target="esp32"):
     """Report every finding, not just pass/fail.
 
     A version mismatch has to be diagnosable from this output alone, so each
@@ -148,34 +157,57 @@ def check_env(stream=sys.stdout):
     rows.append(("python", *check_python(pins)))
     rows.append(("packages", *check_packages()))
 
-    idf = find_idf()
-    if idf is None:
-        rows.append(("esp-idf", False, f"{IDF_TOOL} not found (PATH, IDF_PATH, ~/esp/esp-idf)"))
-    else:
-        idf_python = find_idf_python() or Path(sys.executable)
-        found = parse_version(_run([str(idf_python), str(idf), "--version"]))
-        want = pins["ESP_IDF_VERSION"]
-        rows.append(("esp-idf", found == want, f"{found or 'unknown'} at {idf} (want {want})"))
+    if target in {"esp32", "all"}:
+        idf = find_idf()
+        if idf is None:
+            rows.append(("esp32/esp-idf", False, f"{IDF_TOOL} not found (PATH, IDF_PATH, ~/esp/esp-idf)"))
+        else:
+            idf_python = find_idf_python() or Path(sys.executable)
+            found = parse_version(_run([str(idf_python), str(idf), "--version"]))
+            want = pins["ESP_IDF_VERSION"]
+            rows.append(("esp32/esp-idf", found == want, f"{found or 'unknown'} at {idf} (want {want})"))
 
-    gcc = f"{pins['GCC_PREFIX']}-gcc"
-    gcc_path = find_gcc(pins)
-    if gcc_path:
-        rows.append(("toolchain", True, f"{parse_version(_run([str(gcc_path), '--version']))} at {gcc_path}"))
-    else:
-        rows.append(("toolchain", False, f"{gcc} not on PATH (source $IDF_PATH/export.sh)"))
+        gcc = f"{pins['GCC_PREFIX']}-gcc"
+        gcc_path = find_gcc(pins)
+        if gcc_path:
+            found = parse_version(_run([str(gcc_path), "--version"]))
+            rows.append(("esp32/toolchain", found is not None, f"{found or 'unknown'} at {gcc_path}"))
+        else:
+            rows.append(("esp32/toolchain", False, f"{gcc} not on PATH (source $IDF_PATH/export.sh)"))
 
-    qemu = find_qemu(pins)
-    if qemu is None:
-        rows.append(("qemu", False, "qemu-system-xtensa not found (idf_tools.py install qemu-xtensa)"))
-    else:
-        # A distro qemu-system-xtensa exists on many machines and has no esp32
-        # machine -- passing on presence alone is a false green.
-        has_esp32 = "esp32" in _run([str(qemu), "-machine", "help"]).lower()
-        found = parse_version(_run([str(qemu), "--version"]))
-        detail = f"{found} at {qemu}"
-        if not has_esp32:
-            detail += " -- no esp32 machine, not the Espressif build"
-        rows.append(("qemu", has_esp32, detail))
+        qemu = find_qemu(pins)
+        if qemu is None:
+            rows.append(("esp32/qemu", False, "qemu-system-xtensa not found (idf_tools.py install qemu-xtensa)"))
+        else:
+            # A distro qemu-system-xtensa exists on many machines and has no esp32
+            # machine -- passing on presence alone is a false green.
+            has_esp32 = "esp32" in _run([str(qemu), "-machine", "help"]).lower()
+            found = parse_version(_run([str(qemu), "--version"]))
+            detail = f"{found} at {qemu}"
+            if not has_esp32:
+                detail += " -- no esp32 machine, not the Espressif build"
+            rows.append(("esp32/qemu", has_esp32, detail))
+
+    if target in {"esp8266", "all"}:
+        sdk = find_esp8266_sdk()
+        if sdk is None:
+            rows.append(("esp8266/sdk", False, "ESP8266_RTOS_SDK/export.sh not found (ESP8266_RTOS_SDK, ~/esp/ESP8266_RTOS_SDK)"))
+        else:
+            revision = _run(["git", "-C", str(sdk), "rev-parse", "HEAD"]).strip()
+            tag = _run(["git", "-C", str(sdk), "describe", "--tags", "--exact-match"]).strip()
+            want = pins["ESP8266_SDK_COMMIT"]
+            want_tag = f"v{pins['ESP8266_SDK_VERSION']}"
+            rows.append(("esp8266/sdk", revision == want and tag == want_tag,
+                         f"{sdk} {tag or 'untagged'} at {revision or 'unknown'} (want {want_tag}/{want})"))
+
+        prefix = pins["ESP8266_GCC_PREFIX"]
+        gcc_path = find_gcc(pins, prefix)
+        if gcc_path:
+            found = parse_version(_run([str(gcc_path), "--version"]))
+            want = pins["ESP8266_GCC_VERSION"]
+            rows.append(("esp8266/toolchain", found == want, f"{found or 'unknown'} at {gcc_path} (want {want})"))
+        else:
+            rows.append(("esp8266/toolchain", False, f"{prefix}-gcc not found (source ESP8266_RTOS_SDK/export.sh)"))
 
     width = max(len(name) for name, _, _ in rows)
     for name, ok, detail in rows:

@@ -24,8 +24,10 @@ not developed to ISO 26262 or IEC 61508 and carries no ASIL/SIL claim.
 > [NEXT_STEPS.md](NEXT_STEPS.md) defines the gates;
 > [PROJECT_DEFINITION.md](PROJECT_DEFINITION.md) 2.2.0 is normative.
 
-Package 7L adds the bounded BswM mode contract, provider-owned declared
-substitution (`RTE_QUALITY_SUBSTITUTED`), and an opt-in unpinned PlatformIO
+Package 7M adds the software release contract, frozen-schema and traceability
+checks, and the explicit one-framed-UART and async-core decisions. Package 7L
+added the bounded BswM mode contract, provider-owned declared substitution
+(`RTE_QUALITY_SUBSTITUTED`), and an opt-in unpinned PlatformIO
 adapter. PlatformIO output is best-effort and outside the byte-reproducible
 ESP-IDF path.
 
@@ -34,8 +36,8 @@ ESP-IDF path.
 | ECU | Board profile | Default device selection | Current status |
 |---|---|---|---|
 | ESP32 | HW-394 | Simulated environmental provider and PWM fan | Internal runtime + boot smoke; external sensor work deferred |
-| ESP8266 | Generic/raw, with actual module and wiring | No automatic OLED; choose qualified capabilities explicitly | Backend/MCAL work active |
-| ESP8266 | HW-364A | Reusable SSD1306 driver instance plus reserved onboard bus pins/address | OLED build, transfer and visual baseline passed; remaining backend/radio work active |
+| ESP8266 | Generic/raw, with actual module and wiring | No automatic OLED; choose qualified capabilities explicitly | Backend baseline implemented; qualification remains gated |
+| ESP8266 | HW-364A | Reusable SSD1306 driver instance plus reserved onboard bus pins/address | OLED build, transfer and visual baseline passed; physical/electrical qualification remains gated |
 
 HW-364A board selection will add the OLED automatically; its demo binds a display
 SWC through RTE. The same SSD1306 driver will support explicitly wired panels on
@@ -167,7 +169,7 @@ drivers/<type>/     driver sources + <type>.json manifest + tests
 handcode/<swctype>/ SWC sources + manifest + tests
 soc/ modules/ devkits/ overlays/    hardware description, four tiers
 v01-reference/      hand-built ESP32/host current-scope reference; becomes golden fixture #0 after qualification
-v01-hw364a-reference/  hand-built ESP8266/OLED reference; future fixture #1
+v01-hw364a-reference/  hand-built ESP8266/OLED reference; fixture #1 candidate pending physical freeze
 code/               generated output — generated artifacts only
 test/               generated host-test project + QEMU model
 project.json        the composition

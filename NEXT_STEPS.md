@@ -34,7 +34,7 @@ simulation provider only.
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
 | 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete; CI host/generator gates and local target/QEMU evidence are green; physical release remains** |
-| 7 | v1.1 | — | **software package complete through 7M; physical timing, electrical and external-device evidence remains deferred** |
+| 7 | v1.1 | — | **software package complete through 7M; 7N target/release closure active; physical timing, electrical and external-device evidence remains deferred** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -933,6 +933,30 @@ that scenario remains a host/target qualification item. The one-framed-UART
 log/XCP decision and async-core/synchronous-facade API decision are recorded in
 §12.2–§12.3. Physical measurements, board electrical checks, target timing,
 and deferred external-device qualification remain intentionally open.
+
+### Package 7N — non-physical target and release closure — 2026-09-21
+
+In progress. `check-env` now supports explicit `esp32`, `esp8266` and `all`
+target scopes and verifies the pinned ESP8266 SDK commit and GCC 8.4.0 without
+mixing it with the ESP-IDF environment. The ESP8266 build is reproducible
+through `scripts/ci/build_esp8266.sh`; a shared GPTimer source guard fixed the
+last cross-target compile failure. GitHub CI now builds the ESP32 reference in
+the pinned `espressif/idf:release-v5.2` container and runs the four supported
+non-retained QEMU scenarios. README and agent guidance now describe the 7M
+status and the target-specific commands consistently.
+
+Remaining software-only closure:
+
+1. Add a reproducible ESP8266 SDK/compiler CI image or runner; the local build
+   wrapper is ready, but the repository does not currently publish that image.
+2. Decide whether Sonar is required. No Sonar configuration or gate currently
+   exists; existing CI warnings are GitHub Node/runner migration notices, not
+   quality-gate failures.
+3. Keep generic arbitrary-runtime template generation separate from this
+   package; the current-scope reference renderer remains the declared boundary.
+
+Physical board measurements, retained-reset evidence unavailable in QEMU,
+external devices and all Section 3 qualification remain outside 7N.
 
 ## Phase 8 — Deferred external-device qualification
 
