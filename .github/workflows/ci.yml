@@ -38,6 +38,7 @@ jobs:
       - run: >-
           python -m pytest -q scripts/tests/test_fixtures.py
           scripts/tests/test_phase6.py scripts/tests/test_env.py
+          scripts/tests/test_release_contract.py
 
   host-tests:
     runs-on: ubuntu-latest

@@ -30,11 +30,11 @@ simulation provider only.
 | 0E | ESP8266 backend qualification | generic ECU SDK/compiler pinned; build and runtime feasibility recorded | **complete; full behavioral/watchdog qualification is Phase 2** |
 | 1 | v0.1 reference firmware | internal runtime, simulated-provider path, HW-364A OLED path, host/layering tests and target boots | **complete for current scope; external device drivers deferred** |
 | 2 | Available-hardware validation & measurement | internal/runtime, radio-capability, hardware-peripheral and connected-OLED evidence | **non-physical gate complete for current scope; Section 3 physical-equipment evidence deferred to the final pass** |
-| 3 | Schema freeze | measured internal/board/backend numbers and modular ECU/driver model; §4 schema 2.2.0 frozen | **active pre-freeze; current-scope schemas/manifests exist with explicit unverified physical fields** |
+| 3 | Schema freeze | measured internal/board/backend numbers and modular ECU/driver model; §4 schema 2.2.0 frozen | **software freeze closure complete; measured physical fields remain unverified until the final physical pass** |
 | 4 | Fixture harness | harness reproduces a diff for a deliberate one-byte change | **complete; byte-exact comparison, deliberate-diff, atomic-output and lock tests pass** |
 | 5 | Generator MVP | current-scope fixtures regenerate byte-identically; generic ESP8266 and board-default selection work | **current-scope implementation complete; generic/reference renderer boundary remains explicit** |
-| 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete locally; CI workflow and hardware qualification remain release gates** |
-| 7 | v1.1 | — | **software package complete through 7L; physical timing, electrical and external-device evidence remains deferred** |
+| 6 | v1.0 hardening & release | CI green incl. determinism + negative compile tests | **software gate complete; CI host/generator gates and local target/QEMU evidence are green; physical release remains** |
+| 7 | v1.1 | — | **software package complete through 7M; physical timing, electrical and external-device evidence remains deferred** |
 | 8 | Deferred external-device qualification | exact external drivers, wiring, calibration and physical acceptance | **deferred until hardware is available** |
 | 9 | v2.0 | — | planned |
 
@@ -917,6 +917,22 @@ electrical fixture. No physical claim is closed by this package.
    required, and never reported as `VALID`.
 
 ---
+
+### Package 7M — non-physical release closure — 2026-09-21
+
+Complete for the current software-only scope. The release contract now checks
+that every requirement ID used by the normative design is present exactly once
+in the traceability matrix and that the complete 2.2.0 schema catalog remains
+present and frozen. The generator-gates CI job runs this check with the
+fixture, phase-6 and environment gates. The ESP32 reference build and the
+four non-retained QEMU scenarios were re-run locally with ESP-IDF 5.2.3;
+QEMU remains a GPIO/UART/timer integration check and does not qualify I2C,
+OLED, PCNT, GPTimer jitter or electrical behavior. QEMU cannot preserve the
+retained reset state needed by the controlled-reset SAFE_HALT scenario, so
+that scenario remains a host/target qualification item. The one-framed-UART
+log/XCP decision and async-core/synchronous-facade API decision are recorded in
+§12.2–§12.3. Physical measurements, board electrical checks, target timing,
+and deferred external-device qualification remain intentionally open.
 
 ## Phase 8 — Deferred external-device qualification
 

@@ -546,7 +546,7 @@ Hm implements Dem-inspired qualification: counter debounce (`failedCyclesToSet` 
 RAM mirror per block with dirty tracking; `Nvm_WriteBlock` updates RAM only; NVS commits at `EcuM_Shutdown` (WriteAll), explicit save, or configurable bounded flush. Blocks carry version + CRC; CRC failure at boot → defaults + RTF-007 + quality INITIAL, never a hang. TWDT is disarmed around storage operations (sector erase can take tens of ms); **failsafes are applied before persistence**; a failed commit never blocks recovery. Wear budget estimated and reported.
 
 ### 6.7 Calibration (v1.1)
-Parameters are **ports** (single wiring model); the generated **Cal** component is the provider, backed by NvM blocks. Transport: **lightweight XCP-on-UART** (CTO subset: CONNECT / GET_STATUS / DOWNLOAD / UPLOAD — no DAQ in v1.1), enabling standard automotive calibration tools. Values range-checked (DataConstr) on write.
+Parameters are **ports** (single wiring model); the generated **Cal** component is the provider, backed by NvM blocks. Transport: **lightweight XCP-on-UART** (CTO subset: CONNECT / GET_STATUS / DOWNLOAD / UPLOAD — no DAQ in v1.1), enabling standard automotive calibration tools. Values range-checked (DataConstr) on write. Package 7M resolves the transport decision to one framed UART: log and XCP records use distinct frame types, the transport remains caller-owned, and no second UART is required.
 
 ### 6.8 MCAL Contracts
 - Universal, **instance-based** APIs; AUTOSAR-style types (`Std_ReturnType`, `uint16/uint32` lengths — no `size_t`); `Std_Types.h`/`Platform_Types.h`/`Compiler.h` in the generated `Std` component.
@@ -710,11 +710,11 @@ When the current-scope runtime is complete and measured, this tree becomes **gol
 
 ---
 
-## 12. Open Points (final remaining)
+## 12. Open Points (physical/release remaining)
 
 1. **HW-394 board manifest population** — schema and draft manifest exist; physical header/pull-up/onboard-device verification remains pending.
-2. **v1.1 UART multiplexing** — XCP tuning and log on one framed UART vs. a dedicated second UART.
-3. **v1.1 async driver API shape** — preferred: async core with a synchronous bounded facade; alternative: completion callbacks. Decide at v1.1 design.
+2. **RESOLVED by Package 7M — v1.1 UART multiplexing** — one framed UART carries distinct log and XCP frame types; no second UART is required.
+3. **RESOLVED by Package 7M — v1.1 async driver API shape** — the async core with a synchronous bounded facade is the public contract; completion callbacks remain an internal service mechanism.
 4. **HW-364A board identity** — processor identity, 2 MB flash, OLED wiring/controller ACK and GPIO14/GPIO12 are recorded; fitted pull-ups, header exposure and reset behavior remain. Resolve reference D-label ambiguity using GPIO numbers.
 5. **ESP8266 backend qualification** — the v3.4/GCC 8.4.0 pin, native build/flash/boot and repeated OLED transfers are recorded; §6.10 watchdog, timing, reset-history and SAFE_HALT proof remain.
 6. **OLED execution contract** — measure bounded chunk/command time, recovery and full-frame latency under load; freeze static buffer ownership and scheduling from evidence.
