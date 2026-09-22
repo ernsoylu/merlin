@@ -11,7 +11,12 @@ Mcal_ResultType Mcal_Gptimer_ValidateConfig(const Mcal_GptimerConfigType *config
     return ticks == 0U || ticks > UINT64_MAX ? MCAL_INVALID_ARG : MCAL_OK;
 }
 
-#if defined(ESP_PLATFORM) && !defined(MERLIN_HW364A)
+/* esp_timer is not the GPTimer alarm API: ESP8266 RTOS SDK v3.4 ships
+   esp_timer.h with esp_timer_get_time(), and only driver/gptimer.h below is
+   genuinely ESP32-only. Guarding this half on MERLIN_HW364A too made the
+   monotonic clock a silent stub on that target, which zeroed every elapsed-time
+   measurement built on it. */
+#ifdef ESP_PLATFORM
 
 #include "esp_timer.h"
 

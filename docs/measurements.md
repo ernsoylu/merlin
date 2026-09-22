@@ -4,6 +4,53 @@ Updated 2026-09-21. This ledger distinguishes current host/QEMU/HW-394/HW-364A
 bring-up evidence from the acceptance campaign still required by
 PROJECT_DEFINITION.md §8.3.
 
+### 2026-09-22 HW-364A bench run: dead deadline detection found and fixed
+
+Re-running the HW-364A bench for the `display_task` split found a real
+regression that had nothing to do with it. `Mcal_Gpt_GetTimeUs` was guarded on
+`#if defined(ESP_PLATFORM) && !defined(MERLIN_HW364A)`, so on HW-364A it took
+the stub branch, returned `MCAL_HW_FAIL` and never wrote `*timeUs`.
+`user_main.c`'s `time_us()` discards that result, so every timestamp on that
+target was 0 and every elapsed-time measurement built on it was `0 - 0`.
+Deadline detection was silently dead, and chunk timing silently reported zero.
+That is the "ESP32-only MCAL peripherals must never become silent stubs"
+invariant being violated: `esp_timer.h`/`esp_timer_get_time()` ships in ESP8266
+RTOS SDK v3.4; only `driver/gptimer.h` is genuinely ESP32-only. The guard on
+the `esp_timer` half is now `#ifdef ESP_PLATFORM`; the GPTimer alarm block is
+unchanged.
+
+Evidence, commit `18198ed` plus the fix, SDK v3.4 @ `89a3f25`, GCC 8.4.0,
+ESP8266EX MAC `ec:64:c9:df:16:7e`, 2 MB flash, all three flash regions
+hash-verified, console 74880 Bd:
+
+| Build | `chunk_us_avg` / `max` | RTF records |
+|---|---|---|
+| before fix, `HW364A_INJECT_SLOW_ACTIVATION` | 0 / 0 | `RTF-003-SKIP` only |
+| after fix, same injection | 6783 / 6838 | `RTF-002-DEADLINE` **and** `RTF-003-SKIP` |
+
+After the fix the documented TST-OLED-08 sequence reproduces exactly:
+`{"rtf":"RTF-002-DEADLINE","activation":6,"elapsedUs":1517440}` for the 1300 ms
+stall against the 550 ms deadline, then
+`{"rtf":"RTF-003-SKIP","activation":7,"skipped":1}` as the overrun pushes
+`vTaskDelayUntil` past the next boundary, with no watchdog reset. Chunk
+transfers now measure ~6.75-6.85 ms each, 32 per frame (~217 ms of transfer per
+activation) — a number that was previously unobtainable because the clock was
+dead. This also confirms the `display_task` split did not break the deadline
+path: `RTF-002` fires with `render_frame_to_panel` in place.
+
+**Not established by this run.** Steady-state capture on the shipped
+(non-injection) fixed image is incomplete: the CH340 adapter dropped off the
+USB bus mid-capture, producing one corrupted record (`completed` 19 ->
+105965) before output stopped. That capture is discarded, not interpreted. The
+three intact captures (clean pre-fix boot, and both injection runs) show
+strictly consecutive frame counters with no gaps. **Visible OLED pattern
+acceptance (P-19 / TST-OLED-02) was not performed at all** — it needs an
+operator looking at the panel, and no serial counter substitutes for it, per
+the project's own rule that completed frame transfers are counted separately
+from physical visible-output acceptance. Section 1.5's current measurement,
+instrument calibration, photographs and operator sign-off are likewise
+outstanding.
+
 ### 2026-09-21 SonarCloud static-analysis gate
 
 The SonarCloud automatic-analysis gate failed on new code with reliability E,
@@ -18,10 +65,9 @@ qualification, and no generated binary changed behavior.
 bounded-chunk-transfer loop, leaving the release, deadline, watchdog and
 boot-loop policy in the task. The call sits between the same `startUs` and
 `elapsedUs` reads, so the timed region is unchanged, and the ESP8266 image
-rebuilds clean. **This edits hardware-qualified source: the HW-364A bench
-evidence below predates the split and has not been re-run.** The image is not
-byte-reproducible across builds, so no binary-equivalence argument is offered
-in place of a bench run.
+rebuilds clean. This edits hardware-qualified source; the bench re-run is
+recorded in the 2026-09-22 entry above, which confirms the deadline path still
+fires with the split in place. Visible OLED acceptance remains outstanding.
 
 Two findings are configuration, recorded here so they are not re-litigated:
 
