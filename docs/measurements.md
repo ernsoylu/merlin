@@ -38,13 +38,26 @@ activation) — a number that was previously unobtainable because the clock was
 dead. This also confirms the `display_task` split did not break the deadline
 path: `RTF-002` fires with `render_frame_to_panel` in place.
 
-**Not established by this run.** Steady-state capture on the shipped
-(non-injection) fixed image is incomplete: the CH340 adapter dropped off the
-USB bus mid-capture, producing one corrupted record (`completed` 19 ->
-105965) before output stopped. That capture is discarded, not interpreted. The
-three intact captures (clean pre-fix boot, and both injection runs) show
-strictly consecutive frame counters with no gaps. **Visible OLED pattern
-acceptance (P-19 / TST-OLED-02) was not performed at all** — it needs an
+**Steady state on the shipped image.** A 60 s capture of the fixed
+non-injection build (`5c2a92c8...`) recorded 90 frames with strictly
+consecutive `completed` counters and no gaps, zero `rtf` records, zero
+`SAFE_HALT`, and `health` READY throughout. `chunks_total` advanced by exactly
+160 per five activations across 18 reports (32 chunks per frame), with
+`chunk_us_avg` pinned at 6746 us and `chunk_us_max` settling at 6802 us.
+`heap_free` held at 112256 bytes and `uxTaskGetStackHighWaterMark` at 1236
+words for the whole run, consistent with no steady-state allocation churn
+(a watermark alone still proves nothing about worst-case depth). Across
+roughly ten resets today the boot record read `bootLoopCounter:1` every time
+rather than climbing, so the `HW364A_GOOD_FRAMES_TO_CLEAR` (5) clear path is
+writing RTC memory as intended.
+
+An earlier attempt at this capture was discarded rather than interpreted: the
+CH340 adapter dropped off the USB bus mid-run, producing one impossible record
+(`completed` 19 -> 105965) before output stopped. It was re-run after
+reconnection and is the capture described above.
+
+**Not established by this run.** **Visible OLED pattern acceptance (P-19 /
+TST-OLED-02) was not performed at all** — it needs an
 operator looking at the panel, and no serial counter substitutes for it, per
 the project's own rule that completed frame transfers are counted separately
 from physical visible-output acceptance. Section 1.5's current measurement,
