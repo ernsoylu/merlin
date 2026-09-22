@@ -15,9 +15,13 @@ a checkerboard shows none. The host render of the exact frame is checked in at
 
 **Operator observation on the fitted panel, commit `5f6267f` plus this change,
 ESP8266EX MAC `ec:64:c9:df:16:7e`:** "it shows merlin centered, no mirroring,
-counter changing". That closes the centring, mirroring and visible-liveness
-parts of step 3, and is the first physical confirmation that the Merlin path
-puts correct pixels on the glass rather than merely completing transfers.
+counter changing", and on a follow-up look, "it's upright, border visible on
+all four edges". Step 3 is therefore covered in full: origin and row/column
+order (text reads correctly), rotation (upright), mirroring (none) and absence
+of clipping (the 1-pixel border survives on all four edges, so no row or
+column is lost off-panel). The changing counter gives visible liveness. This
+is the first physical confirmation that the Merlin path puts correct pixels on
+the glass rather than merely completing transfers.
 
 Firmware-side repetition for step 5, same image, six consecutive RTS-pin
 resets: every cycle produced a clean `{"boot":"start","bootLoopCounter":1,
@@ -25,8 +29,7 @@ resets: every cycle produced a clean `{"boot":"start","bootLoopCounter":1,
 gaps, stayed `health` READY and never reached SAFE_HALT. A sustained run of
 35 s on the same image recorded 56 consecutive frames with no `rtf` records.
 
-**Still outstanding for P-19.** Rotation and absence of clipping were not
-explicitly reported and are not inferred from the above. Step 2's pattern
+**Still outstanding for P-19.** Step 2's pattern
 sweep (all-off, all-on, checkerboard, row and corner markers as selectable
 patterns) is not implemented; only the normal moving pattern exists. Step 4's
 photographs, and Section 1.5's measured current, instrument identification and
