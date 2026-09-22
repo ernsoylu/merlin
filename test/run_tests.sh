@@ -60,7 +60,8 @@ run ssd1306 "$ROOT/v01-reference/components/Drv_Ssd1306/src/ssd1306_frame.c" "$R
 run log_det "$ROOT/v01-reference/components/Log/src/log_ring.c" "$ROOT/v01-reference/components/Det/src/det.c" "$ROOT/test/host/test_log_det.c"
 run climate_io "$ROOT/v01-reference/components/LibPid/src/pid.c" "$ROOT/v01-reference/components/Swc_ClimateController/src/climate_controller.c" "$ROOT/v01-reference/components/IoHwAb/src/iohwab_fan.c" "$ROOT/test/host/test_climate_io.c"
 run ecum "$ROOT/v01-reference/components/EcuM/src/ecum.c" "$ROOT/v01-reference/components/EcuM/src/ecum_startup.c" "$ROOT/test/host/test_ecum.c"
-run display_demo "$ROOT/v01-reference/components/Swc_DisplayDemo/src/display_demo.c" "$ROOT/v01-reference/components/Drv_Ssd1306/src/ssd1306_frame.c" "$ROOT/test/host/test_display_demo.c"
+run display_font "$ROOT/v01-reference/components/Swc_DisplayDemo/src/display_font.c" "$ROOT/test/host/test_display_font.c"
+run display_demo "$ROOT/v01-reference/components/Swc_DisplayDemo/src/display_demo.c" "$ROOT/v01-reference/components/Swc_DisplayDemo/src/display_font.c" "$ROOT/v01-reference/components/Drv_Ssd1306/src/ssd1306_frame.c" "$ROOT/test/host/test_display_demo.c"
 run bswm "$ROOT/v01-reference/components/BswM/src/bswm.c" "$ROOT/test/host/test_bswm.c"
 
 # Prove the allowed side first: an SWC-shaped source compiles without driver

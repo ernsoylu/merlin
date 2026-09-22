@@ -4,6 +4,43 @@ Updated 2026-09-21. This ledger distinguishes current host/QEMU/HW-394/HW-364A
 bring-up evidence from the acceptance campaign still required by
 PROJECT_DEFINITION.md §8.3.
 
+### 2026-09-22 P-19 OLED visible acceptance (TST-OLED-02, partial)
+
+The demo SWC now renders a "MERLIN" wordmark at scale 3, centred, over the
+existing border and the 8-pixel sequence counter. Text was chosen over the
+previous checkerboard because P-19 step 3 asks the operator to judge origin,
+rotation and mirroring by eye, and asymmetric letterforms show all three where
+a checkerboard shows none. The host render of the exact frame is checked in at
+`docs/artifacts-p19-wordmark.txt`.
+
+**Operator observation on the fitted panel, commit `5f6267f` plus this change,
+ESP8266EX MAC `ec:64:c9:df:16:7e`:** "it shows merlin centered, no mirroring,
+counter changing". That closes the centring, mirroring and visible-liveness
+parts of step 3, and is the first physical confirmation that the Merlin path
+puts correct pixels on the glass rather than merely completing transfers.
+
+Firmware-side repetition for step 5, same image, six consecutive RTS-pin
+resets: every cycle produced a clean `{"boot":"start","bootLoopCounter":1,
+"resetReason":2}` record, restarted the frame counter at 1, advanced with no
+gaps, stayed `health` READY and never reached SAFE_HALT. A sustained run of
+35 s on the same image recorded 56 consecutive frames with no `rtf` records.
+
+**Still outstanding for P-19.** Rotation and absence of clipping were not
+explicitly reported and are not inferred from the above. Step 2's pattern
+sweep (all-off, all-on, checkerboard, row and corner markers as selectable
+patterns) is not implemented; only the normal moving pattern exists. Step 4's
+photographs, and Section 1.5's measured current, instrument identification and
+operator sign-off, are not recorded. The visual result after each of the six
+resets was not observed; only the firmware record was.
+
+**Unexplained timing change, carried forward.** `chunk_us_avg` fell from
+6746 us to 2447 us (`max` 6802 -> 2525) between the checkerboard image and the
+wordmark image. I2C transfer duration should not depend on frame content and
+`transferFailures` stayed 0 in both, so neither figure should be treated as a
+settled chunk-timing measurement for P-20 until the cause is understood. A
+plausible but unverified mechanism is flash-cache/code-layout sensitivity on
+this target after adding a translation unit.
+
 ### 2026-09-22 HW-364A bench run: dead deadline detection found and fixed
 
 Re-running the HW-364A bench for the `display_task` split found a real

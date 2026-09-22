@@ -37,6 +37,23 @@ int main(void)
     assert(second->sequence == 2U);
     assert(memcmp(snapshot, second->pixels, sizeof(snapshot)) != 0);
 
+    /* The wordmark must actually be drawn, and must stay inside the panel: a
+       glyph run that overflowed would wrap into the next page rather than
+       clip, so check the band it occupies and the columns beside it. */
+    unsigned band = 0U;
+    for (uint16_t x = 0; x < RTE_MONOCHROME_FRAME_WIDTH; ++x) {
+        for (uint16_t y = 21U; y < 42U; ++y) {
+            band += (second->pixels[x + (y / 8U) * RTE_MONOCHROME_FRAME_WIDTH]
+                     >> (y % 8U)) & 1U;
+        }
+    }
+    assert(band > 200U);
+    for (uint16_t y = 21U; y < 42U; ++y) {
+        const uint16_t row = (uint16_t)((y / 8U) * RTE_MONOCHROME_FRAME_WIDTH);
+        assert((second->pixels[1U + row] >> (y % 8U)) & 1U ? 0 : 1);
+        assert((second->pixels[126U + row] >> (y % 8U)) & 1U ? 0 : 1);
+    }
+
     MockI2c mock = {0};
     Mcal_I2cInterfaceType i2c = {
         .context = &mock, .writeRegister = write_frame
